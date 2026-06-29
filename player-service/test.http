@@ -1,0 +1,8 @@
+### Créer un joueur de test
+POST http://localhost:8081/api/players
+Content-Type: application/json
+
+{
+  "pseudo": "Guillaume3",
+  "email": "guillaume@dauphine.eu"
+}
