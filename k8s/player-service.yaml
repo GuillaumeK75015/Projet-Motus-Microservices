@@ -33,7 +33,7 @@ spec:
                   key: password
           readinessProbe:
             httpGet:
-              path: /api/players
+              path: /api/health
               port: 8081
             initialDelaySeconds: 30
             periodSeconds: 10

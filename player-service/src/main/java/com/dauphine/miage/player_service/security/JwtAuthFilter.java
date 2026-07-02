@@ -1,5 +1,6 @@
 package com.dauphine.miage.player_service.security;
 
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,12 +31,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
+            Claims claims = jwtUtil.validateAndExtractClaims(token);
 
-            if (jwtUtil.isTokenValid(token) &&
-                    SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (claims != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 
-                String pseudo  = jwtUtil.extractPseudo(token);
-                String role    = jwtUtil.extractRole(token);
+                String pseudo = claims.getSubject();
+                String role   = claims.get("role", String.class);
 
                 var authToken = new UsernamePasswordAuthenticationToken(
                         pseudo,

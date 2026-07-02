@@ -30,13 +30,13 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Probe d'infrastructure (Kubernetes readinessProbe, etc.) — publique
+                        .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         // Endpoints d'authentification — publics
                         .requestMatchers("/api/auth/**").permitAll()
                         // Inscription joueur (mot de passe requis) et partie en invité — publiques
                         .requestMatchers(HttpMethod.POST, "/api/players").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/players/guest").permitAll()
-                        // Recherche par pseudo — publique (utilisée par le panneau de recherche admin)
-                        .requestMatchers(HttpMethod.GET, "/api/players/pseudo/**").permitAll()
                         // Lecture d'un joueur par ID — publique (nécessaire pour les appels inter-services)
                         .requestMatchers(HttpMethod.GET, "/api/players/{id}").permitAll()
                         // Liste complète des joueurs / suppression — ADMIN uniquement
