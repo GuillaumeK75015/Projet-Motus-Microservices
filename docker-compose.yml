@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+
+  # ── Base de données ────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: db_players
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - motus-net
+
+  # ── Microservices ──────────────────────────────────────────────────────────
+  player-service:
+    build: ./player-service
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/db_players
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: root
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - motus-net
+
+  dictionary-service:
+    build: ./dictionary-service
+    ports:
+      - "8082:8082"
+    networks:
+      - motus-net
+
+  history-stat-service:
+    build: ./history-stat-service
+    ports:
+      - "8083:8083"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/db_history
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: root
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - motus-net
+
+  motus-game-service:
+    build: ./motus-game-service
+    ports:
+      - "8084:8084"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/db_motus
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: root
+      SERVICES_PLAYER_URL: http://player-service:8081
+      SERVICES_DICTIONARY_URL: http://dictionary-service:8082
+      SERVICES_HISTORY_URL: http://history-stat-service:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+      player-service:
+        condition: service_started
+      dictionary-service:
+        condition: service_started
+      history-stat-service:
+        condition: service_started
+    restart: on-failure
+    networks:
+      - motus-net
+
+volumes:
+  postgres-data:
+
+networks:
+  motus-net:
+    driver: bridge

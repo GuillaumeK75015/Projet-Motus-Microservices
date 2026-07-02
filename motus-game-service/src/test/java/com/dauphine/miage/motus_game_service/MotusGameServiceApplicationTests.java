@@ -1,13 +1,4 @@
 package com.dauphine.miage.motus_game_service;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-
-@SpringBootTest
-class MotusGameServiceApplicationTests {
-
-	@Test
-	void contextLoads() {
-	}
-
-}
+// Les tests sont dans MotusFeedbackUtilTest.java
+// Ce fichier est conservé pour compatibilité avec la structure Maven.

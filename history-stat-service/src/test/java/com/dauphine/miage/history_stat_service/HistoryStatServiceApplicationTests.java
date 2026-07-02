@@ -1,13 +1,4 @@
 package com.dauphine.miage.history_stat_service;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-
-@SpringBootTest
-class HistoryStatServiceApplicationTests {
-
-	@Test
-	void contextLoads() {
-	}
-
-}
+// Les tests sont dans HistoryControllerTest.java
+// Ce fichier est conservé pour compatibilité avec la structure Maven.

@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dictionary-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dictionary-service
+  template:
+    metadata:
+      labels:
+        app: dictionary-service
+    spec:
+      containers:
+        - name: dictionary-service
+          image: dictionary-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8082
+          readinessProbe:
+            httpGet:
+              path: /api/dictionary
+              port: 8082
+            initialDelaySeconds: 20
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dictionary-service
+spec:
+  selector:
+    app: dictionary-service
+  ports:
+    - port: 8082
+      targetPort: 8082

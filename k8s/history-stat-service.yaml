@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: history-stat-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: history-stat-service
+  template:
+    metadata:
+      labels:
+        app: history-stat-service
+    spec:
+      containers:
+        - name: history-stat-service
+          image: history-stat-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8083
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres:5432/db_history
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: username
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+          readinessProbe:
+            httpGet:
+              path: /api/history
+              port: 8083
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: history-stat-service
+spec:
+  selector:
+    app: history-stat-service
+  ports:
+    - port: 8083
+      targetPort: 8083
