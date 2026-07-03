@@ -28,6 +28,10 @@ jobs:
           cache: maven
           cache-dependency-path: ${{ matrix.service }}/pom.xml
 
+      - name: Make mvnw executable
+        working-directory: ${{ matrix.service }}
+        run: chmod +x ./mvnw
+
       - name: Build and test ${{ matrix.service }}
         working-directory: ${{ matrix.service }}
         run: ./mvnw -B verify
