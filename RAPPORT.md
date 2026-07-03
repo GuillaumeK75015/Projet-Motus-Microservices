@@ -4,7 +4,7 @@
 
 **Binôme :** Fahd Derradji & Guillaume Karaouane
 
-**Lien GitHub :** [à compléter]
+**Lien GitHub :** https://github.com/GuillaumeK75015/Projet-Motus-Microservices
 
 ---
 
@@ -18,7 +18,7 @@
 ```bash
 docker-compose up --build
 ```
-Cette commande démarre PostgreSQL et les 4 microservices, initialise les 3 bases de données via `init-db.sql`, puis expose l'application sur **http://localhost:8084**.
+Cette commande démarre PostgreSQL, les 4 microservices métier, l'**API Gateway** ainsi que **Prometheus** et **Grafana**, initialise les 3 bases de données via `init-db.sql`, puis expose l'application sur **http://localhost:8080** (point d'entrée unique). Prometheus est disponible sur `:9090`, Grafana sur `:3000` (identifiants `admin`/`admin`).
 
 ### Sans Docker
 ```sql
@@ -31,8 +31,9 @@ cd player-service       && ./mvnw spring-boot:run
 cd dictionary-service   && ./mvnw spring-boot:run
 cd history-stat-service && ./mvnw spring-boot:run
 cd motus-game-service   && ./mvnw spring-boot:run
+cd api-gateway          && ./mvnw spring-boot:run
 ```
-Puis ouvrir **http://localhost:8084**.
+Puis ouvrir **http://localhost:8080**.
 
 ### Avec MiniKube (déploiement Kubernetes)
 ```bash
@@ -42,10 +43,11 @@ docker build -t player-service:latest       ./player-service
 docker build -t dictionary-service:latest   ./dictionary-service
 docker build -t history-stat-service:latest ./history-stat-service
 docker build -t motus-game-service:latest   ./motus-game-service
+docker build -t api-gateway:latest          ./api-gateway
 kubectl apply -f k8s/
-minikube service motus-game-service
+minikube service api-gateway
 ```
-Les manifests (`k8s/`) définissent un `Deployment` + `Service` par microservice, un `Secret` pour les identifiants PostgreSQL, et une `readinessProbe` HTTP par service.
+Les manifests (`k8s/`) définissent un `Deployment` + `Service` par microservice, un `Secret` pour les identifiants PostgreSQL, et des `readinessProbe`/`livenessProbe` HTTP basées sur Actuator (`/actuator/health/readiness`, `/actuator/health/liveness`) par service.
 
 ### Comptes de test
 - **Joueur** : inscription libre (pseudo + email + mot de passe), ou bouton *« Jouer en invité »* pour une partie immédiate sans compte.
@@ -58,26 +60,28 @@ Les manifests (`k8s/`) définissent un `Deployment` + `Service` par microservice
 ### 2.1 Architecture — découpage en microservices
 
 ```
-                     Navigateur ── http://localhost:8084 (UI intégrée)
+                     Navigateur ── http://localhost:8080 (UI intégrée + point d'entrée unique)
                                         │ REST (JSON)
                          ┌──────────────▼───────────────┐
-                         │      motus-game-service        │  :8084 — logique du jeu
-                         │  (fait aussi office de proxy    │  DB : db_motus
-                         │   HTTP pour éviter le CORS)     │
-                         └───┬────────────┬───────────┬──┘
-                    REST      │            │ REST       │ REST
-              ┌────────────▼──┐  ┌──────▼───────┐  ┌──▼──────────────────┐
-              │ player-service │  │ dictionary-  │  │ history-stat-service │
-              │ :8081          │  │ service :8082│  │ :8083                 │
-              │ DB : db_players│  │ (en mémoire, │  │ DB : db_history        │
-              │ Auth JWT+BCrypt│  │  pas de BD)  │  │ Historique + stats     │
-              └────────────────┘  └──────────────┘  └────────────────────────┘
+                         │        api-gateway             │  :8080 — routage, façade réseau,
+                         │  (sert aussi le frontend        │  résilience (Resilience4j)
+                         │   statique)                     │  aucune logique métier
+                         └───┬───────┬────────────┬───────┘
+                    REST      │       │ REST        │ REST
+              ┌────────────▼──┐ ┌───▼──────────┐ ┌──▼──────────────────┐   ┌─────────────────┐
+              │ player-service │ │ dictionary-  │ │ history-stat-service │   │ motus-game-service│
+              │ :8081          │ │ service :8082│ │ :8083                │◀──│ :8084 (logique jeu)│
+              │ DB : db_players│ │ (en mémoire, │ │ DB : db_history      │   │ DB : db_motus       │
+              │ Auth JWT+BCrypt│ │  pas de BD)  │ │ Historique + stats   │   └─────────────────────┘
+              └────────────────┘ └──────────────┘ └──────────────────────┘
                          │                                    │
                          └──────────────┬─────────────────────┘
                                     PostgreSQL :5432 (3 bases distinctes)
+
+   Prometheus :9090 ── scrape /actuator/prometheus sur les 5 services ── Grafana :3000
 ```
 
-Chaque service possède sa **propre base de données** (pattern *database-per-service*) et n'accède jamais directement à celle d'un autre service : toute communication passe par API REST (`RestTemplate`). Le navigateur ne parle qu'à `motus-game-service`, qui joue le rôle de **façade/proxy** vers `player-service` et `history-stat-service` — ce qui évite tout problème CORS côté client.
+Chaque service possède sa **propre base de données** (pattern *database-per-service*) et n'accède jamais directement à celle d'un autre service : toute communication passe par API REST (`RestTemplate`). Le navigateur ne parle qu'à l'**API Gateway** (`api-gateway`, service dédié — voir §2.5), qui route vers `motus-game-service` pour le jeu et vers `player-service`/`history-stat-service` pour les comptes et l'historique ; `motus-game-service` reste purement métier et ne fait plus office de proxy.
 
 ### 2.2 Diagramme de classes « métier » (vision conceptuelle)
 
@@ -133,7 +137,9 @@ dictionary-service : pas d'entité persistante — dictionnaire chargé en mémo
 
 ### 2.4 API REST (extrait des endpoints principaux)
 
-| Méthode | Endpoint (exposé côté client via le proxy `/api/proxy/...`) | Accès |
+Tous les endpoints ci-dessous sont exposés côté client via l'**API Gateway** (`http://localhost:8080`), point d'entrée unique de l'application.
+
+| Méthode | Endpoint (exposé via l'API Gateway `/api/proxy/...`) | Accès |
 |---|---|---|
 | POST | `/api/proxy/players` — inscription (mot de passe requis) | public |
 | POST | `/api/proxy/players/guest` — partie en invité, sans compte | public |
@@ -155,19 +161,23 @@ dictionary-service : pas d'entité persistante — dictionnaire chargé en mémo
   - **Mode invité** : partie jouable sans inscription (compte éphémère sans mot de passe), pour ne pas alourdir l'accès au jeu.
   - Protection anti-élévation de privilège : le rôle est forcé à `ROLE_USER` côté serveur à l'inscription, quel que soit le contenu envoyé par le client.
 - **Conteneurisation** : un `Dockerfile` multi-stage (build Maven puis image d'exécution) par service, orchestré par `docker-compose.yml`.
-- **Déploiement Kubernetes** : manifests `Deployment` + `Service` par microservice dans `k8s/`, `Secret` pour les identifiants PostgreSQL, `readinessProbe` HTTP (dirigées vers des endpoints publics pour rester compatibles avec les nouvelles règles de sécurité).
-- **Frontend** : une unique page HTML/CSS/JS (sans framework), servie statiquement par `motus-game-service`, qui fait aussi office de proxy vers les deux autres services pour éviter le CORS.
-- **Proxy — gestion centralisée des erreurs** : `ProxyController` relayait initialement chaque appel vers `player-service`/`history-stat-service` avec son propre bloc `try/catch` quasi identique (une dizaine de fois) :
-  ```java
-  try {
-      ResponseEntity<String> r = restTemplate.exchange(url, method, new HttpEntity<>(body, headers), String.class);
-      return ResponseEntity.status(r.getStatusCode()).body(r.getBody());
-  } catch (HttpClientErrorException e) {
-      return ResponseEntity.status(e.getStatusCode()).body(e.getResponseBodyAsString());
-  }
-  ```
-  Cette logique a été factorisée dans une seule méthode `forward(HttpMethod, url, body, authorization)`, appelée par toutes les méthodes du contrôleur (`login`, `registerPlayer`, `registerGuest`, `getPlayerById`, `getPlayerByPseudo`, `getAllPlayers`, `deletePlayer`, `getStats`, `getClassement`, `searchParties`…). Elle gère en un seul endroit : le transfert du header `Authorization` vers le service interne, les erreurs HTTP du service appelé (4xx/5xx, renvoyées telles quelles au client), et le cas où le service est injoignable (`RestClientException` → `502 Bad Gateway` au lieu d'une exception non gérée). Un correctif futur (ex. gérer un nouveau type d'erreur) ne se fait donc qu'à un seul endroit au lieu d'une dizaine.
-- **Tests** : JUnit 5 + Mockito pour les contrôleurs (tests unitaires), tests d'intégration Spring Boot sur `player-service`.
+- **Déploiement Kubernetes** : manifests `Deployment` + `Service` par microservice dans `k8s/`, `Secret` pour les identifiants PostgreSQL, `readinessProbe`/`livenessProbe` HTTP basées sur Spring Boot Actuator.
+- **Frontend** : une unique page HTML/CSS/JS (sans framework), servie statiquement par `api-gateway`, qui route aussi les appels API vers les services internes pour éviter le CORS.
+
+- **API Gateway (`api-gateway`, service 5)** : point d'entrée unique de l'application (:8080), extrait de l'ancien `ProxyController` de `motus-game-service` pour se conformer au pattern *API Gateway* du cours (routage/façade réseau séparé de la logique métier). Il centralise :
+  - le relai des appels vers `player-service`/`history-stat-service` (auth, joueurs, stats, classement, recherche admin) avec le même mécanisme de `forward()` factorisé qu'auparavant (transfert du header `Authorization`, erreurs HTTP 4xx/5xx renvoyées telles quelles, panne réseau → 503) ;
+  - le routage générique `/api/games/**` vers `motus-game-service`, qui reste désormais purement métier (plus de logique de proxy) ;
+  - le service du frontend statique (`index.html`), déplacé depuis `motus-game-service`.
+
+- **Résilience (Resilience4j)** : les appels inter-services par `RestTemplate` (`motus-game-service` → player/dictionary/history, `api-gateway` → player/history/game) sont enveloppés dans des clients dédiés (`PlayerClient`, `HistoryClient`, `DictionaryClient`, `DownstreamClient`) annotés `@CircuitBreaker`/`@Retry`. Seules les pannes réseau (timeout, connexion refusée) déclenchent retry puis ouverture du circuit — une erreur métier 4xx/5xx du service appelé (ex. 404 joueur inconnu) est traitée normalement et ne compte pas comme un échec technique. Objectif : éviter qu'une panne d'un service (ex. `dictionary-service` indisponible) ne fasse échouer en cascade toute une partie en cours.
+
+- **Observabilité (Actuator + Prometheus + Grafana)** : chaque service expose `spring-boot-starter-actuator` (`/actuator/health`, `/actuator/prometheus`, `/actuator/metrics`), avec des groupes de santé `readiness`/`liveness` dédiés aux probes Kubernetes. Un `docker-compose` Prometheus scrape les 5 services toutes les 15 s (`observability/prometheus.yml`) et un Grafana pré-connecté à cette source de données (`:3000`) permet de visualiser latence, taux d'erreur et JVM/GC en direct — répondant au manque d'observabilité identifié par rapport au cours.
+
+- **HATEOAS (niveau 3 de Richardson)** : `spring-boot-starter-hateoas` ajouté à `player-service` et `motus-game-service`. `GET /api/players/{id}` renvoie un `EntityModel<Joueur>` avec des liens `self`/`players` ; les réponses de partie (`GameStateDto`) exposent des liens `self`, `guess` (uniquement si la partie est encore en cours) et `gamesByPlayer`. Le format des champs métier existants est inchangé (les liens sont ajoutés sous une clé `_links` séparée), donc sans impact sur le frontend actuel.
+
+- **CI/CD (GitHub Actions)** : `.github/workflows/ci.yml` compile et teste (`mvn verify`) chacun des 5 modules en matrice à chaque push/PR sur `main`, puis valide que les 5 images Docker se construisent (`docker compose build`) — première brique d'intégration continue, absente jusqu'ici.
+
+- **Tests** : JUnit 5 + Mockito pour les contrôleurs et services (tests unitaires), tests d'intégration Spring Boot sur `player-service` et `api-gateway`.
 
 ---
 
@@ -179,7 +189,7 @@ dictionary-service : pas d'entité persistante — dictionnaire chargé en mémo
 
 **Ce que nous avons moins aimé** — Le dictionnaire de mots fourni (`mots.txt`) est un lexique brut de formes fléchies, pas une liste de mots courants : on y trouve beaucoup de conjugaisons rares, ce qui rend le jeu localement plus difficile qu'un Motus « grand public ». C'est un point identifié mais non traité dans cette version (nécessite soit un filtrage lexical, soit une liste de mots plus qualitative).
 
-**Réussites** — Architecture microservices fonctionnelle de bout en bout (inscription, partie, historisation, statistiques, classement, administration) ; sécurisation ajoutée sans casser le parcours joueur existant (mode invité conservé) ; suppression en cascade d'un compte et de son historique à travers deux services indépendants ; déploiement testé aussi bien en local, qu'en Docker Compose et en manifests Kubernetes.
+**Réussites** — Architecture microservices fonctionnelle de bout en bout (inscription, partie, historisation, statistiques, classement, administration) ; sécurisation ajoutée sans casser le parcours joueur existant (mode invité conservé) ; suppression en cascade d'un compte et de son historique à travers deux services indépendants ; déploiement testé aussi bien en local, qu'en Docker Compose et en manifests Kubernetes. Après relecture du cours, quatre écarts identifiés ont été comblés sans régression (33 tests toujours au vert sur `motus-game-service`, 11 sur `player-service`) : extraction d'une **API Gateway** dédiée (auparavant un proxy ad hoc mélangé à la logique métier), **observabilité** (Actuator + Prometheus/Grafana), **résilience** (Resilience4j : retry + circuit breaker sur les appels inter-services) et une première **pipeline CI** (GitHub Actions).
 
 **Difficultés** — Plusieurs bugs subtils découverts en testant réellement chaque fonctionnalité plutôt qu'en se fiant à la seule compilation : une dépendance Jackson manquante en scope *compile* (uniquement apportée en *runtime* par une autre librairie) faisait planter `motus-game-service` au démarrage ; le renommage de certains packages d'auto-configuration Spring Security entre les versions de Spring Boot ; une image Docker reconstruite mais pas redéployée (cache) qui masquait un correctif déjà appliqué dans le code ; une faille XSS stockée détectée en revue de code (pseudo affiché sans échappement dans plusieurs vues) puis corrigée.
 

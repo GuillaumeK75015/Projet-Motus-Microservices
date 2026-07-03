@@ -4,12 +4,17 @@ import com.dauphine.miage.player_service.domain.Joueur;
 import com.dauphine.miage.player_service.repository.PlayerRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.hateoas.EntityModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Random;
+
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
+import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 @RestController
 @RequestMapping("/api/players")
@@ -59,9 +64,13 @@ public class PlayerController {
     }
 
     // Récupération par ID : GET http://localhost:8081/api/players/1
+    // Réponse enrichie de liens HATEOAS (self, collection) pour se rapprocher du niveau 3 de Richardson.
     @GetMapping("/{id}")
-    public ResponseEntity<Joueur> getPlayerById(@PathVariable Long id) {
+    public ResponseEntity<EntityModel<Joueur>> getPlayerById(@PathVariable Long id) {
         return playerRepository.findById(id)
+                .map(joueur -> EntityModel.of(joueur,
+                        linkTo(methodOn(PlayerController.class).getPlayerById(id)).withSelfRel(),
+                        linkTo(methodOn(PlayerController.class).getAllPlayers()).withRel("players")))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -76,7 +85,7 @@ public class PlayerController {
 
     // Tous les joueurs : GET http://localhost:8081/api/players
     @GetMapping
-    public java.util.List<Joueur> getAllPlayers() {
+    public List<Joueur> getAllPlayers() {
         return playerRepository.findAll();
     }
 

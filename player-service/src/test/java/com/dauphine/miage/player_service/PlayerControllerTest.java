@@ -11,9 +11,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.quality.Strictness;
 import org.mockito.junit.jupiter.MockitoSettings;
+import org.springframework.hateoas.EntityModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +43,9 @@ class PlayerControllerTest {
 
     @BeforeEach
     void setUp() {
+        // linkTo(methodOn(...)) (HATEOAS) a besoin d'une requête HTTP courante, même simulée.
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+
         joueur = new Joueur();
         joueur.setId(1L);
         joueur.setPseudo("Alice");
@@ -100,17 +107,18 @@ class PlayerControllerTest {
     void getPlayerById_joueurExistant_retourne200() {
         when(playerRepository.findById(1L)).thenReturn(Optional.of(joueur));
 
-        ResponseEntity<Joueur> response = playerController.getPlayerById(1L);
+        ResponseEntity<EntityModel<Joueur>> response = playerController.getPlayerById(1L);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isEqualTo(joueur);
+        assertThat(response.getBody().getContent()).isEqualTo(joueur);
+        assertThat(response.getBody().getLink("self")).isPresent();
     }
 
     @Test
     void getPlayerById_joueurInexistant_retourne404() {
         when(playerRepository.findById(99L)).thenReturn(Optional.empty());
 
-        ResponseEntity<Joueur> response = playerController.getPlayerById(99L);
+        ResponseEntity<EntityModel<Joueur>> response = playerController.getPlayerById(99L);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }

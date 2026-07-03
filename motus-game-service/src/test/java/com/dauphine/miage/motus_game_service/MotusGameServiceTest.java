@@ -1,6 +1,8 @@
 package com.dauphine.miage.motus_game_service;
 
 import com.dauphine.miage.motus_game_service.client.DictionaryClient;
+import com.dauphine.miage.motus_game_service.client.HistoryClient;
+import com.dauphine.miage.motus_game_service.client.PlayerClient;
 import com.dauphine.miage.motus_game_service.domain.Jeu;
 import com.dauphine.miage.motus_game_service.domain.StatutJeu;
 import com.dauphine.miage.motus_game_service.domain.Tentative;
@@ -13,8 +15,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -23,16 +23,15 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MotusGameServiceTest {
 
     @Mock JeuRepository    jeuRepository;
-    @Mock RestTemplate     restTemplate;
     @Mock DictionaryClient dictionaryClient;
+    @Mock PlayerClient     playerClient;
+    @Mock HistoryClient    historyClient;
 
     @InjectMocks MotusGameService service;
 
@@ -44,9 +43,6 @@ class MotusGameServiceTest {
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(service, "playerServiceUrl",  "http://player");
-        ReflectionTestUtils.setField(service, "historyServiceUrl", "http://history");
-
         jeuEnCours = new Jeu();
         jeuEnCours.setId(1L);
         jeuEnCours.setJoueurId(10L);
@@ -63,8 +59,7 @@ class MotusGameServiceTest {
 
     @Test
     void startGame_joueurInexistant_leveException() {
-        when(restTemplate.getForObject(anyString(), eq(Object.class)))
-                .thenThrow(new RuntimeException("404 Not Found"));
+        when(playerClient.existe(99L)).thenReturn(false);
 
         assertThatThrownBy(() -> service.startGame(99L, NB_LETTRES))
                 .isInstanceOf(RuntimeException.class)
@@ -81,7 +76,7 @@ class MotusGameServiceTest {
 
     @Test
     void startGame_succes_retourneDtoCorrect() {
-        when(restTemplate.getForObject(anyString(), eq(Object.class))).thenReturn(new Object());
+        when(playerClient.existe(10L)).thenReturn(true);
         when(dictionaryClient.getMotAleatoireParLongueur(NB_LETTRES)).thenReturn(MOT_SECRET);
         when(jeuRepository.save(any(Jeu.class))).thenAnswer(inv -> {
             Jeu j = inv.getArgument(0);
@@ -104,7 +99,7 @@ class MotusGameServiceTest {
 
     @Test
     void startGame_dictionnaireRetourneNull_leveException() {
-        when(restTemplate.getForObject(anyString(), eq(Object.class))).thenReturn(new Object());
+        when(playerClient.existe(10L)).thenReturn(true);
         when(dictionaryClient.getMotAleatoireParLongueur(NB_LETTRES)).thenReturn(null);
 
         assertThatThrownBy(() -> service.startGame(10L, NB_LETTRES))

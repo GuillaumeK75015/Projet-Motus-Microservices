@@ -1,10 +1,13 @@
 package com.dauphine.miage.motus_game_service.client;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -25,6 +28,13 @@ public class DictionaryClient {
     @Autowired
     private RestTemplate restTemplate;
 
+    // Référence à soi-même via le proxy Spring : @CircuitBreaker/@Retry ne s'appliquent que sur des
+    // appels entrants par le proxy, pas sur un appel "this.xxx()" — nécessaire ici car charger() est
+    // invoqué en interne (@PostConstruct, rechargement paresseux depuis motExiste()).
+    @Autowired
+    @Lazy
+    private DictionaryClient self;
+
     @Value("${services.dictionary.url}")
     private String dictionaryServiceUrl;
 
@@ -32,31 +42,37 @@ public class DictionaryClient {
 
     @PostConstruct
     public void charger() {
-        try {
-            String[] mots = restTemplate.getForObject(
-                    dictionaryServiceUrl + "/api/dictionary", String[].class);
-            if (mots != null) {
-                Arrays.stream(mots).map(String::toUpperCase).forEach(cache::add);
-                log.info("Dictionnaire chargé en cache : {} mots (7-10 lettres)", cache.size());
-            }
-        } catch (Exception e) {
-            log.warn("dictionary-service indisponible au démarrage — rechargement paresseux activé");
+        self.chargerDepuisDictionnaire();
+    }
+
+    @CircuitBreaker(name = "dictionary-service", fallbackMethod = "fallbackCharger")
+    @Retry(name = "dictionary-service")
+    public void chargerDepuisDictionnaire() {
+        String[] mots = restTemplate.getForObject(
+                dictionaryServiceUrl + "/api/dictionary", String[].class);
+        if (mots != null) {
+            Arrays.stream(mots).map(String::toUpperCase).forEach(cache::add);
+            log.info("Dictionnaire chargé en cache : {} mots (7-10 lettres)", cache.size());
         }
     }
 
-    /** Tire un mot aléatoire (longueur quelconque 7-10). */
-    public String getMotAleatoire() {
-        return restTemplate.getForObject(
-                dictionaryServiceUrl + "/api/dictionary/random", String.class);
+    private void fallbackCharger(Throwable t) {
+        log.warn("dictionary-service indisponible ({}) — rechargement paresseux activé", t.getMessage());
     }
 
     /**
      * Tire un mot aléatoire d'une longueur précise (7-10).
      * Utilisé au démarrage de chaque partie Motus.
      */
+    @CircuitBreaker(name = "dictionary-service", fallbackMethod = "fallbackMotAleatoire")
+    @Retry(name = "dictionary-service")
     public String getMotAleatoireParLongueur(int nombreLettres) {
         return restTemplate.getForObject(
                 dictionaryServiceUrl + "/api/dictionary/random/" + nombreLettres, String.class);
+    }
+
+    private String fallbackMotAleatoire(int nombreLettres, Throwable t) {
+        throw new RuntimeException("Dictionnaire temporairement indisponible pour tirer un mot de " + nombreLettres + " lettres");
     }
 
     public boolean motExiste(String mot) {

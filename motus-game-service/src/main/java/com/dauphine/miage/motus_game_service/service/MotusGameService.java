@@ -1,6 +1,8 @@
 package com.dauphine.miage.motus_game_service.service;
 
 import com.dauphine.miage.motus_game_service.client.DictionaryClient;
+import com.dauphine.miage.motus_game_service.client.HistoryClient;
+import com.dauphine.miage.motus_game_service.client.PlayerClient;
 import com.dauphine.miage.motus_game_service.domain.Jeu;
 import com.dauphine.miage.motus_game_service.domain.StatutJeu;
 import com.dauphine.miage.motus_game_service.domain.Tentative;
@@ -12,10 +14,8 @@ import com.dauphine.miage.motus_game_service.util.MotusFeedbackUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 public class MotusGameService {
@@ -37,11 +38,9 @@ public class MotusGameService {
     private static final Random random = new Random();
 
     @Autowired private JeuRepository    jeuRepository;
-    @Autowired private RestTemplate     restTemplate;
     @Autowired private DictionaryClient dictionaryClient;
-
-    @Value("${services.player.url}")  private String playerServiceUrl;
-    @Value("${services.history.url}") private String historyServiceUrl;
+    @Autowired private PlayerClient     playerClient;
+    @Autowired private HistoryClient    historyClient;
 
     // ── Démarrage ─────────────────────────────────────────────────────────────
 
@@ -62,9 +61,7 @@ public class MotusGameService {
         }
 
         // Vérification que le joueur existe
-        try {
-            restTemplate.getForObject(playerServiceUrl + "/api/players/" + joueurId, Object.class);
-        } catch (Exception e) {
+        if (!playerClient.existe(joueurId)) {
             throw new RuntimeException("Joueur introuvable avec l'id : " + joueurId);
         }
 
@@ -126,9 +123,9 @@ public class MotusGameService {
         }
 
         // Règle 3 : mot non déjà proposé dans cette partie
-        boolean dejaProposeIndex = jeu.getTentatives().stream()
+        boolean dejaPropose = jeu.getTentatives().stream()
                 .anyMatch(t -> t.getMotPropose().equalsIgnoreCase(mot));
-        if (dejaProposeIndex) {
+        if (dejaPropose) {
             String raison = "Le mot '" + mot + "' a déjà été proposé dans cette partie";
             adminLog.info("[ADMIN] Partie {} — mot refusé '{}' : {}", jeuId, mot, raison);
             throw new RuntimeException(raison);
@@ -216,7 +213,7 @@ public class MotusGameService {
         return jeu.getTentatives().stream().map(t -> {
             String[] fb = t.getFeedback().split(",");
             String word = t.getMotPropose();
-            List<LettreResultat> lettres = java.util.stream.IntStream
+            List<LettreResultat> lettres = IntStream
                     .range(0, word.length())
                     .mapToObj(i -> new LettreResultat(String.valueOf(word.charAt(i)), fb[i]))
                     .collect(Collectors.toList());
@@ -240,10 +237,6 @@ public class MotusGameService {
         body.put("motSecret",        jeu.getMotSecret());
         body.put("nombreTentatives", jeu.getTentatives().size());
         body.put("gagne",            gagne);
-        try {
-            restTemplate.postForObject(historyServiceUrl + "/api/history", body, Object.class);
-        } catch (Exception e) {
-            log.warn("Impossible d'enregistrer l'historique pour la partie {} : {}", jeu.getId(), e.getMessage());
-        }
+        historyClient.enregistrer(body);
     }
 }

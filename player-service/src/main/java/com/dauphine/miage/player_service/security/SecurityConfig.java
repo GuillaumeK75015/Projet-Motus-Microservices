@@ -30,8 +30,8 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        // Probe d'infrastructure (Kubernetes readinessProbe, etc.) — publique
-                        .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
+                        // Probes d'infrastructure (Kubernetes, Prometheus) — publiques
+                        .requestMatchers("/actuator/**").permitAll()
                         // Endpoints d'authentification — publics
                         .requestMatchers("/api/auth/**").permitAll()
                         // Inscription joueur (mot de passe requis) et partie en invité — publiques

@@ -5,24 +5,26 @@ Master 2 MIAGE SITN Apprentissage – 2025/2026
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Browser  →  http://localhost:8084  (UI Motus intégrée)     │
+│  Browser  →  http://localhost:8080  (UI Motus intégrée)     │
 └──────────────────────┬──────────────────────────────────────┘
                        │ REST
           ┌────────────▼─────────────┐
-          │   motus-game-service     │  :8084  (DB: db_motus)
-          │   Logique du jeu         │
-          └──┬───────────┬───────────┘
-             │           │           │
-    REST      │    REST   │   REST    │
-┌─────────▼──┐  ┌────▼────────┐  ┌──▼─────────────────┐
-│player-svc  │  │dictionary   │  │history-stat-service │
-│:8081       │  │-service     │  │:8083                │
-│db_players  │  │:8082        │  │db_history           │
-│Joueurs     │  │Mots (RAM)   │  │Parties + Stats      │
+          │       api-gateway         │  :8080  (routage + résilience,
+          │  (façade réseau, sans BD) │           pas de logique métier)
+          └──┬───────────┬─────────┬─┘
+             │           │         │  REST
+    REST      │    REST   │   REST  │
+┌─────────▼──┐  ┌────▼────────┐  ┌▼─────────────────┐   ┌─────────────────────┐
+│player-svc  │  │dictionary   │  │history-stat-service│  │motus-game-service    │
+│:8081       │  │-service     │  │:8083                │  │:8084 (DB: db_motus) │
+│db_players  │  │:8082        │  │db_history           │  │Logique du jeu       │
+│Joueurs     │  │Mots (RAM)   │  │Parties + Stats      │  └─────────────────────┘
 └────────────┘  └─────────────┘  └─────────────────────┘
           │           │                    │
           └───────────┴────────────────────┘
                          PostgreSQL :5432
+
+  Prometheus :9090  ──(scrape /actuator/prometheus)──  Grafana :3000
 ```
 
 ## Prérequis
@@ -42,18 +44,19 @@ CREATE DATABASE db_history;
 CREATE DATABASE db_motus;
 ```
 
-### 2. Démarrer chaque service (4 terminaux)
+### 2. Démarrer chaque service (5 terminaux)
 
 ```bash
 cd player-service       && ./mvnw spring-boot:run
 cd dictionary-service   && ./mvnw spring-boot:run
 cd history-stat-service && ./mvnw spring-boot:run
 cd motus-game-service   && ./mvnw spring-boot:run
+cd api-gateway          && ./mvnw spring-boot:run
 ```
 
 ### 3. Jouer
 
-Ouvrir **http://localhost:8084** dans le navigateur.
+Ouvrir **http://localhost:8080** dans le navigateur.
 
 ---
 
@@ -63,9 +66,9 @@ Ouvrir **http://localhost:8084** dans le navigateur.
 docker-compose up --build
 ```
 
-- Lance PostgreSQL + les 4 services automatiquement
+- Lance PostgreSQL + les 4 services métier + l'API Gateway + Prometheus/Grafana automatiquement
 - Les bases de données sont créées via `init-db.sql`
-- Interface : **http://localhost:8084**
+- Interface : **http://localhost:8080** (Prometheus : `:9090`, Grafana : `:3000`)
 
 Arrêter proprement :
 ```bash
@@ -96,6 +99,7 @@ docker build -t player-service:latest       ./player-service
 docker build -t dictionary-service:latest   ./dictionary-service
 docker build -t history-stat-service:latest ./history-stat-service
 docker build -t motus-game-service:latest   ./motus-game-service
+docker build -t api-gateway:latest          ./api-gateway
 
 # 4. Déployer
 kubectl apply -f k8s/postgres.yaml
@@ -103,12 +107,13 @@ kubectl apply -f k8s/player-service.yaml
 kubectl apply -f k8s/dictionary-service.yaml
 kubectl apply -f k8s/history-stat-service.yaml
 kubectl apply -f k8s/motus-game-service.yaml
+kubectl apply -f k8s/api-gateway.yaml
 
 # 5. Attendre que tout soit prêt
 kubectl get pods --watch
 
 # 6. Obtenir l'URL de l'interface
-minikube service motus-game-service --url
+minikube service api-gateway --url
 ```
 
 Supprimer le déploiement :
@@ -158,6 +163,9 @@ minikube stop
 | GET | `/api/games/player/{id}` | Parties d'un joueur |
 | GET | `/api/games` | Toutes les parties |
 
+### api-gateway (:8080) — point d'entrée unique côté navigateur
+Route `/api/proxy/**` vers player-service/history-stat-service et `/api/games/**` vers motus-game-service ; sert aussi le frontend statique. Expose également `/actuator/health`, `/actuator/prometheus`.
+
 ---
 
 ## Structure du projet
@@ -167,8 +175,11 @@ Projet-Motus-Microservices/
 ├── player-service/          # Gestion des joueurs        (port 8081)
 ├── dictionary-service/      # Dictionnaire de mots       (port 8082)
 ├── history-stat-service/    # Historique & statistiques  (port 8083)
-├── motus-game-service/      # Logique du jeu + UI        (port 8084)
+├── motus-game-service/      # Logique du jeu             (port 8084)
+├── api-gateway/             # Point d'entrée unique + UI (port 8080)
 │   └── src/main/resources/static/index.html  ← interface web
+├── observability/           # Config Prometheus + Grafana
+├── .github/workflows/       # Pipeline CI (GitHub Actions)
 ├── docker-compose.yml
 ├── init-db.sql
 └── k8s/                     # Manifests Kubernetes

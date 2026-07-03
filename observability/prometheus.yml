@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: api-gateway
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["api-gateway:8080"]
+
+  - job_name: player-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["player-service:8081"]
+
+  - job_name: dictionary-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["dictionary-service:8082"]
+
+  - job_name: history-stat-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["history-stat-service:8083"]
+
+  - job_name: motus-game-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["motus-game-service:8084"]

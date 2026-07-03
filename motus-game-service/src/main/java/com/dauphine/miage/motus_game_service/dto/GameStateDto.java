@@ -1,13 +1,16 @@
 package com.dauphine.miage.motus_game_service.dto;
 
+import org.springframework.hateoas.RepresentationModel;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
  * Vue publique d'une partie retournée par l'API.
  * Le mot secret n'est révélé qu'à la fin de la partie.
+ * Étend RepresentationModel pour exposer des liens HATEOAS ("_links") en plus des champs existants.
  */
-public class GameStateDto {
+public class GameStateDto extends RepresentationModel<GameStateDto> {
 
     private Long id;
     private Long joueurId;

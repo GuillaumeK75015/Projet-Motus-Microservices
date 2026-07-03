@@ -24,6 +24,8 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Probes d'infrastructure (Kubernetes, Prometheus) — publiques
+                        .requestMatchers("/actuator/**").permitAll()
                         // Écriture des résultats — appelée par motus-game-service, pas d'utilisateur authentifié
                         .requestMatchers(HttpMethod.POST, "/api/history").permitAll()
                         // Historique / stats / classement d'un joueur — publics (consultés par les joueurs)
