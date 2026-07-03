@@ -2,12 +2,13 @@ package com.dauphine.miage.motus_game_service.client;
 
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -40,7 +41,9 @@ public class DictionaryClient {
 
     private final Set<String> cache = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
-    @PostConstruct
+    // ApplicationReadyEvent plutôt que @PostConstruct : à ce stade le bean est pleinement
+    // enregistré dans le contexte, donc le self-proxy @Lazy se résout sans cycle de création.
+    @EventListener(ApplicationReadyEvent.class)
     public void charger() {
         self.chargerDepuisDictionnaire();
     }
