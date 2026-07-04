@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
@@ -13,7 +14,7 @@ import java.util.Map;
 
 /**
  * Client dédié à l'enregistrement de l'historique (fire-and-forget) : une partie
- * terminée ne doit jamais échouer côté joueur à cause d'une panne de history-stat-service.
+ * terminée ne doit jamais échouer — ni ralentir — côté joueur à cause de history-stat-service.
  */
 @Component
 public class HistoryClient {
@@ -26,6 +27,12 @@ public class HistoryClient {
     @Value("${services.history.url}")
     private String historyServiceUrl;
 
+    /**
+     * Enregistrement asynchrone : la réponse au dernier essai (gagné/perdu) n'attend pas
+     * l'écriture de l'historique. L'appel s'exécute dans un thread séparé, protégé par
+     * circuit breaker + retry ; un échec est simplement journalisé (best-effort).
+     */
+    @Async
     @CircuitBreaker(name = "history-service", fallbackMethod = "fallbackEnregistrer")
     @Retry(name = "history-service")
     public void enregistrer(Map<String, Object> body) {

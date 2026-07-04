@@ -15,7 +15,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -70,6 +69,8 @@ public class HistoryController {
 
     /**
      * Recherche multi-critères (tous les paramètres sont optionnels).
+     * Le filtrage est délégué à la base (voir {@link PartieRepository#search}) ; le filtre
+     * "date" est traduit en intervalle [début de journée, début du lendemain[.
      * GET http://localhost:8083/api/history/search?joueurId=1&date=2026-06-29&gagne=true
      */
     @GetMapping("/search")
@@ -78,34 +79,29 @@ public class HistoryController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @RequestParam(required = false) Boolean gagne) {
 
-        return partieRepository.findAll().stream()
-                .filter(p -> joueurId == null || p.getJoueurId().equals(joueurId))
-                .filter(p -> date == null || (p.getDateFin() != null && p.getDateFin().toLocalDate().equals(date)))
-                .filter(p -> gagne == null || p.isGagne() == gagne)
-                .collect(Collectors.toList());
+        LocalDateTime debut = (date != null) ? date.atStartOfDay()            : null;
+        LocalDateTime fin   = (date != null) ? date.plusDays(1).atStartOfDay() : null;
+        return partieRepository.search(joueurId, gagne, debut, fin);
     }
 
     /**
      * Classement global des joueurs trié par victoires décroissantes.
+     * L'agrégation (parties jouées/gagnées par joueur) est faite en base ; seul le tri
+     * final et l'attribution du rang restent côté application.
      * GET http://localhost:8083/api/history/classement
      */
     @GetMapping("/classement")
     public List<ClassementDto> getClassement() {
-        Map<Long, List<Partie>> byPlayer = partieRepository.findAll()
-                .stream()
-                .collect(Collectors.groupingBy(Partie::getJoueurId));
-
         AtomicInteger rang = new AtomicInteger(1);
 
-        return byPlayer.entrySet().stream()
-                .map(e -> {
-                    List<Partie> parties = e.getValue();
-                    int played = parties.size();
-                    int wins = (int) parties.stream().filter(Partie::isGagne).count();
+        return partieRepository.aggregateClassement().stream()
+                .map(row -> {
+                    int played = (int) row.getJouees();
+                    int wins   = (int) row.getGagnees();
                     double rate = played > 0
                             ? Math.round((double) wins / played * 1000) / 10.0
                             : 0.0;
-                    return new ClassementDto(e.getKey(), played, wins, rate);
+                    return new ClassementDto(row.getJoueurId(), played, wins, rate);
                 })
                 .sorted(Comparator
                         .comparingInt(ClassementDto::getPartiesGagnees).reversed()

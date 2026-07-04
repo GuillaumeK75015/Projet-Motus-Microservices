@@ -177,7 +177,17 @@ Tous les endpoints ci-dessous sont exposés côté client via l'**API Gateway** 
 
 - **CI/CD (GitHub Actions)** : `.github/workflows/ci.yml` compile et teste (`mvn verify`) chacun des 5 modules en matrice à chaque push/PR sur `main`, puis valide que les 5 images Docker se construisent (`docker compose build`) — première brique d'intégration continue, absente jusqu'ici.
 
-- **Tests** : JUnit 5 + Mockito pour les contrôleurs et services (tests unitaires), tests d'intégration Spring Boot sur `player-service` et `api-gateway`.
+- **Tests** : JUnit 5 + Mockito pour les contrôleurs et services (tests unitaires), tests d'intégration Spring Boot sur `player-service` et `api-gateway`, test d'intégration base `@DataJpaTest` (H2) sur `history-stat-service`.
+
+### 2.6 Robustesse, correction & expérience de jeu
+
+- **Codes HTTP sémantiques (`motus-game-service`)** : une petite hiérarchie d'exceptions (`NotFoundException` → 404, `InvalidGuessException` → 400, `ServiceUnavailableException` → 503) remplace le `RuntimeException` générique qui retombait systématiquement en 400. Le `GlobalExceptionHandler` traduit chaque type vers le bon statut : partie/joueur introuvable → **404**, dictionnaire injoignable → **503**, règle du jeu non respectée → **400**.
+
+- **Correctif — cache du dictionnaire (fiabilité + dégradation gracieuse)** : le `DictionaryClient` conservait un garde `cache.isEmpty()` pour décider de recharger le dictionnaire ; or `ajouterAuCache(motSecret)` insère le mot secret à chaque début de partie, si bien qu'après un échec de chargement initial (course au démarrage : `motus-game-service` prêt avant `dictionary-service`) le cache n'était plus jamais rechargé et **tous les mots sauf le secret étaient refusés**. Remplacé par un indicateur explicite `chargeComplet` + un **repli autoritaire** vers `/api/dictionary/exists/{mot}` si le cache reste incomplet. En complément, le fallback de tirage du mot (circuit ouvert) tire désormais un mot du **cache local** au lieu d'échouer. Couvert par un test de régression dédié (`DictionaryClientTest`).
+
+- **Performance — filtrage & agrégation en base (`history-stat-service`)** : la recherche multi-critères et le classement chargeaient toutes les parties (`findAll()`) puis filtraient/groupaient en mémoire. Ils utilisent désormais des requêtes **JPQL** dédiées (`search(...)` à paramètres optionnels `IS NULL OR …`, et `aggregateClassement()` renvoyant une projection agrégée `COUNT`/`SUM` — une ligne par joueur). Seuls le tri final et le rang restent applicatifs. Validé par le test `@DataJpaTest` (H2) qui exécute réellement les requêtes.
+
+- **Partage du score (façon Wordle)** : en fin de partie, un bouton **« Partager mon score »** génère une grille d'emojis (🟩 bien placé / 🟨 mal placé / ⬛ absent) à partir de l'état de partie, proposée via l'**API Web Share** native (réseaux sociaux, messageries) avec repli sur le presse-papier.
 
 ---
 
