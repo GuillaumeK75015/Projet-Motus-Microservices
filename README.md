@@ -34,6 +34,16 @@ Master 2 MIAGE SITN Apprentissage – 2025/2026
 
 ---
 
+## Comptes de test
+
+| Rôle | Identifiants | Ce qu'il permet |
+|---|---|---|
+| **Administrateur** (`ROLE_ADMIN`) | `admin` / `Admin1234!` | Panneau admin : liste/suppression des joueurs, recherche des parties, classement |
+| **Joueur** (`ROLE_USER`, avec historique) | `Adam`, `Lisa`, `Marie` ou `Baptiste` — mot de passe `azerty1` | Comptes de démo pré-remplis avec des parties (stats et classement déjà peuplés) |
+| **Invité** | bouton *« Jouer en invité »* | Partie immédiate, sans compte |
+
+---
+
 ## Option 1 – Lancement local (sans Docker)
 
 ### 1. Créer les bases de données PostgreSQL
@@ -134,6 +144,7 @@ minikube stop
 | GET | `/api/players/pseudo/{pseudo}` | Joueur par pseudo |
 | GET | `/api/players` | Tous les joueurs |
 | DELETE | `/api/players/{id}` | Supprimer |
+| POST | `/api/auth/login` | Connexion (joueur ou admin) → jeton JWT |
 
 ### dictionary-service (:8082)
 | Méthode | URL | Description |
@@ -151,7 +162,7 @@ minikube stop
 | GET | `/api/history/player/{id}` | Historique d'un joueur |
 | GET | `/api/history/stats/{id}` | Stats d'un joueur |
 | GET | `/api/history/classement` | Classement global |
-| GET | `/api/history/search?joueurId=&date=&gagne=` | Recherche admin |
+| GET | `/api/history/search?joueurId=&date=&gagne=&mot=` | Recherche / historique filtrable (joueur, date, résultat, mot) |
 | GET | `/api/history` | Toutes les parties |
 
 ### motus-game-service (:8084)
@@ -159,6 +170,7 @@ minikube stop
 |---|---|---|
 | POST | `/api/games/start` | Démarrer une partie |
 | POST | `/api/games/{id}/guess` | Proposer un mot |
+| POST | `/api/games/{id}/abandon` | Abandonner (révèle le mot, compté comme défaite) |
 | GET | `/api/games/{id}` | État d'une partie |
 | GET | `/api/games/player/{id}` | Parties d'un joueur |
 | GET | `/api/games` | Toutes les parties |
