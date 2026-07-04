@@ -14,11 +14,11 @@ spec:
     spec:
       initContainers:
         - name: wait-for-postgres
-          image: busybox:1.36
+          image: postgres:16-alpine
           command:
             - sh
             - -c
-            - until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done
+            - until pg_isready -h postgres -p 5432 -U postgres; do echo waiting for postgres; sleep 2; done
       containers:
         - name: motus-game-service
           image: motus-game-service:latest
