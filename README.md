@@ -88,7 +88,7 @@ docker-compose down -v
 
 ```bash
 # 1. Démarrer MiniKube
-minikube start
+minikube start --cpus=4 --memory=6144mb --driver=docker
 
 # 2. Pointer Docker vers le daemon MiniKube (construire les images dedans)
 eval $(minikube docker-env)          # Linux/Mac
