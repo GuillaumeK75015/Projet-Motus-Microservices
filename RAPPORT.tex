@@ -1,0 +1,299 @@
+% !TeX program = xelatex
+% Compilation : XeLaTeX ou LuaLaTeX obligatoire (diagrammes ASCII en caractères
+% Unicode de dessin de boîtes — non supportés par pdfLaTeX sans police adaptée).
+% Sur Overleaf : Menu > Compiler > XeLaTeX.
+\documentclass[a4paper,11pt]{article}
+
+\usepackage{fontspec}
+\usepackage[french]{babel}
+\usepackage[margin=1.8cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{parskip}
+
+\setmainfont{Latin Modern Roman}
+\setmonofont{DejaVu Sans Mono}[Scale=0.85] % couverture Unicode complète (─│┌┐└┘▶◀ etc.)
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!50!black,
+}
+
+\definecolor{codebg}{RGB}{245,245,245}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  breaklines=true,
+  frame=single,
+  framerule=0.3pt,
+  columns=fullflexible,
+  keepspaces=true,
+  aboveskip=0.5em,
+  belowskip=0.5em,
+}
+
+\titleformat{\section}{\Large\bfseries}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.2em}{0.5em}
+\titlespacing*{\subsection}{0pt}{0.9em}{0.4em}
+
+\lstnewenvironment{diagram}
+  {\lstset{basicstyle=\ttfamily\tiny,frame=single,backgroundcolor=\color{codebg},aboveskip=0.4em,belowskip=0.4em}}
+  {}
+
+\setlist{nosep}
+\setlength{\parskip}{0.5em}
+
+\title{\vspace{-1.5em}\textbf{Projet Motus -- Rapport de projet}}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-3em}
+
+\begin{center}
+\textbf{Master 2 MIAGE SITN Apprentissage 2025-2026 --- Projet Applications Web orient\'ees Services (M. Menceur)}\\[0.3em]
+\textbf{Bin\^ome :} Fahd Derradji \& Guillaume Karaouane\\[0.3em]
+\textbf{Lien GitHub :} \url{https://github.com/GuillaumeK75015/Projet-Motus-Microservices}
+\end{center}
+
+\vspace{1em}
+\hrule
+\vspace{1.5em}
+
+\section{Compilation / ex\'ecution du projet}
+
+\subsection*{Pr\'erequis}
+\begin{itemize}[nosep]
+  \item Java 26 + Maven (ou \texttt{./mvnw} fourni dans chaque module)
+  \item Docker Desktop (m\'ethode recommand\'ee) \textbf{ou} PostgreSQL 16 en local \textbf{ou} MiniKube
+\end{itemize}
+
+\subsection*{M\'ethode recommand\'ee --- Docker Compose}
+\begin{lstlisting}[language=bash]
+docker-compose up --build
+\end{lstlisting}
+Cette commande d\'emarre PostgreSQL, les 4 microservices m\'etier, l'\textbf{API Gateway} ainsi que \textbf{Prometheus} et \textbf{Grafana}, initialise les 3 bases de donn\'ees via \texttt{init-db.sql}, puis expose l'application sur \textbf{http://localhost:8080} (point d'entr\'ee unique). Prometheus est disponible sur \texttt{:9090}, Grafana sur \texttt{:3000} (identifiants \texttt{admin}/\texttt{admin}).
+
+\subsection*{Sans Docker}
+\begin{lstlisting}[language=sql]
+CREATE DATABASE db_players;
+CREATE DATABASE db_history;
+CREATE DATABASE db_motus;
+\end{lstlisting}
+\begin{lstlisting}[language=bash]
+cd player-service       && ./mvnw spring-boot:run
+cd dictionary-service   && ./mvnw spring-boot:run
+cd history-stat-service && ./mvnw spring-boot:run
+cd motus-game-service   && ./mvnw spring-boot:run
+cd api-gateway          && ./mvnw spring-boot:run
+\end{lstlisting}
+Puis ouvrir \textbf{http://localhost:8080}.
+
+\subsection*{Avec MiniKube (d\'eploiement Kubernetes)}
+\begin{lstlisting}[language=bash]
+minikube start --cpus=4 --memory=6144
+& minikube -p minikube docker-env --shell powershell | Invoke-Expression
+docker build -t player-service:latest       ./player-service
+docker build -t dictionary-service:latest   ./dictionary-service
+docker build -t history-stat-service:latest ./history-stat-service
+docker build -t motus-game-service:latest   ./motus-game-service
+docker build -t api-gateway:latest          ./api-gateway
+kubectl apply -f k8s/
+kubectl wait --for=condition=Ready pod --all --timeout=120s
+minikube service api-gateway --url
+\end{lstlisting}
+Les manifests (\texttt{k8s/}) d\'efinissent un \texttt{Deployment} + \texttt{Service} par microservice, un \texttt{Secret} pour les identifiants PostgreSQL, et des \texttt{readinessProbe}/\texttt{livenessProbe} HTTP bas\'ees sur Actuator (\texttt{/actuator\slash health\slash readiness}, \texttt{/actuator\slash health\slash liveness}).
+Ils ajoutent aussi des \texttt{resources.requests/limits} et \texttt{JAVA\_TOOL\_OPTIONS} par service (voir \S2.7) pour un d\'emarrage stable sous MiniKube.
+
+\subsection*{Comptes de test}
+\begin{itemize}[nosep]
+  \item \textbf{Joueur} : inscription libre (pseudo + email + mot de passe), ou bouton \emph{« Jouer en invit\'e »} pour une partie imm\'ediate sans compte.
+  \item \textbf{Administrateur} : compte cr\'e\'e automatiquement au d\'emarrage de \texttt{player-service} (\texttt{admin} / \texttt{Admin1234!}, configurable dans \texttt{application.properties}).
+\end{itemize}
+
+\vspace{1em}\hrule\vspace{1.5em}
+
+\section{Documentation technique}
+
+\subsection{Architecture --- d\'ecoupage en microservices}
+
+\begin{diagram}
+                     Navigateur -- http://localhost:8080 (UI integree + point d'entree unique)
+                                        | REST (JSON)
+                         +--------------v---------------+
+                         |        api-gateway            |  :8080 -- routage, facade reseau,
+                         |  (sert aussi le frontend       |  resilience (Resilience4j)
+                         |   statique)                    |  aucune logique metier
+                         +---+-------+------------+-------+
+                    REST     |       | REST        | REST
+              +------------v--+ +---v----------+ +--v------------------+   +-------------------+
+              | player-service| | dictionary-  | | history-stat-service|   | motus-game-service|
+              | :8081         | | service :8082| | :8083               |<--| :8084 (logique jeu)|
+              | DB : db_players| | (en memoire,| | DB : db_history     |   | DB : db_motus       |
+              | Auth JWT+BCrypt| |  pas de BD) | | Historique + stats  |   +---------------------+
+              +----------------+ +--------------+ +---------------------+
+                         |                                    |
+                         +--------------+---------------------+
+                                    PostgreSQL :5432 (3 bases distinctes)
+
+   Prometheus :9090 -- scrape /actuator/prometheus sur les 5 services -- Grafana :3000
+\end{diagram}
+
+Chaque service poss\`ede sa \textbf{propre base de donn\'ees} (pattern \emph{database-per-service}) et n'acc\`ede jamais directement \`a celle d'un autre service : toute communication passe par API REST (\texttt{RestTemplate}). Le navigateur ne parle qu'\`a l'\textbf{API Gateway} (\texttt{api-gateway}, service d\'edi\'e --- voir \S2.5), qui route vers \texttt{motus-game-service} pour le jeu et vers \texttt{player-service}/\texttt{history-stat-service} pour les comptes et l'historique ; \texttt{motus-game-service} reste purement m\'etier et ne fait plus office de proxy.
+
+\subsection{Diagramme de classes « m\'etier » (vision conceptuelle)}
+
+\begin{diagram}
+   Joueur  1 --------- *  Partie              Une partie appartient a un joueur.
+     | pseudo (unique)       | motSecret          Le resultat (gagne/perdu, nb d'essais)
+     | email                 | nombreTentatives    est historise apres chaque partie.
+     | role (Joueur/Admin)   | gagne / dateFin
+
+   Partie  1 --------- *  Tentative           Chaque tentative est une proposition de
+                             | motPropose          mot, avec le retour lettre par lettre
+                             | feedback            (bien place / mal place / absent).
+
+   Dictionnaire  1 --- *  MotSecret           Le mot mystere est tire aleatoirement
+                                                   (7 a 10 lettres) dans le dictionnaire.
+\end{diagram}
+
+\subsection{Diagrammes de classes --- entit\'es JPA par service}
+
+\begin{diagram}
+player-service                         history-stat-service
++-------------------------+            +--------------------------+
+| Joueur                  |            | Partie                   |
++-------------------------+            +--------------------------+
+| id            : Long    |            | id               : Long  |
+| pseudo        : String  |  (unique)  | joueurId         : Long  |--> Joueur.id
+| email         : String  |            | motSecret        : String|
+| password      : String  |  (BCrypt,  | nombreTentatives : int   |
+|               write-only, nullable   | gagne            : boolean|
+|               pour les comptes invite)| dateFin         : LocalDateTime|
+| role          : String  |  (ROLE_USER+--------------------------+
+|               / ROLE_ADMIN)
+| dateInscription: LocalDateTime
++-------------------------+
+
+motus-game-service
++---------------------------+        +---------------------------+
+| Jeu                       | 1    * | Tentative                 |
++---------------------------+-------->+--------------------------+
+| id            : Long      |        | id           : Long      |
+| joueurId      : Long      |-->Joueur.id
+| motSecret     : String    |        | jeu          : Jeu (FK)   |
+| statut        : StatutJeu |        | numero       : int       |
+|  {EN_COURS|GAGNE|PERDU}   |        | motPropose   : String    |
+| tentativesMax : int = 6   |        | feedback     : String    |
+| dateDebut     : LocalDateTime      |  (BIEN_PLACE,MAL_PLACE,  |
+| tentatives    : List<Tentative>   |   ABSENT -- un par lettre)|
++---------------------------+        +---------------------------+
+\end{diagram}
+
+\texttt{dictionary-service} : pas d'entit\'e persistante --- dictionnaire charg\'e en m\'emoire au d\'emarrage (environ 156\,000 mots valides de 7 \`a 10 lettres, filtr\'es depuis un lexique brut de 336\,000 formes).
+
+\subsection{API REST (extrait des endpoints principaux)}
+
+Tous les endpoints ci-dessous sont expos\'es c\^ot\'e client via l'\textbf{API Gateway} (\texttt{http://localhost:8080}), point d'entr\'ee unique de l'application.
+
+\begin{longtable}{@{}p{1.3cm}p{9cm}p{2.5cm}@{}}
+\toprule
+\textbf{M\'ethode} & \textbf{Endpoint (via l'API Gateway \texttt{/api/proxy/...})} & \textbf{Acc\`es} \\
+\midrule
+\endhead
+POST & \texttt{/api/proxy/players} --- inscription (mot de passe requis) & public \\
+POST & \texttt{/api/proxy/players/guest} --- partie en invit\'e, sans compte & public \\
+POST & \texttt{/api/proxy/auth/login} --- connexion (joueur ou admin) $\rightarrow$ JWT & public \\
+GET & \texttt{/api/proxy/players} --- liste des joueurs & \textbf{ADMIN} \\
+DELETE & \texttt{/api/proxy/players/\{id\}} --- suppression joueur (cascade historique) & \textbf{ADMIN} \\
+POST & \texttt{/api/games/start}, \texttt{/api/games/\{id\}/guess} --- jouer & applicatif (joueurId) \\
+GET & \texttt{/api/proxy/stats/\{id\}}, \texttt{/api/proxy/classement} --- stats / classement & public \\
+GET & \texttt{/api/proxy/search?joueurId=\&date=\&gagne=} --- recherche des parties & \textbf{ADMIN} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Choix techniques}
+
+\begin{itemize}
+  \item \textbf{Spring Boot 4.1.0 / Java 26}, \texttt{spring-boot-starter-webmvc} + Spring Data JPA.
+  \item \textbf{PostgreSQL} : une base d\'edi\'ee par microservice (\texttt{db\_players}, \texttt{db\_history}, \texttt{db\_motus}), \texttt{dictionary-service} reste sans base (dictionnaire en m\'emoire).
+  \item \textbf{Spring Security + JWT} (ajout\'e en cours de projet, cf. bilan) :
+  \begin{itemize}
+    \item Authentification \textbf{stateless} par jeton JWT (HS384), secret partag\'e entre \texttt{player-service} et \texttt{history-stat-service}.
+    \item Mots de passe hash\'es en \textbf{BCrypt} ; aucun mot de passe n'est jamais renvoy\'e par l'API (\texttt{@JsonProperty(access = WRITE\_ONLY)}).
+    \item Deux r\^oles : \texttt{ROLE\_USER} (joueur) et \texttt{ROLE\_ADMIN} (acc\`es \`a la liste/recherche des parties, gestion des joueurs).
+    \item \textbf{Mode invit\'e} : partie jouable sans inscription (compte \'eph\'em\`ere sans mot de passe).
+    \item Protection anti-\'el\'evation de privil\`ege : le r\^ole est forc\'e \`a \texttt{ROLE\_USER} c\^ot\'e serveur \`a l'inscription, quel que soit le contenu envoy\'e par le client.
+  \end{itemize}
+  \item \textbf{Conteneurisation} : un \texttt{Dockerfile} multi-stage (build Maven puis image d'ex\'ecution) par service, orchestr\'e par \texttt{docker-compose.yml}.
+  \item \textbf{D\'eploiement Kubernetes} : manifests \texttt{Deployment} + \texttt{Service} par microservice dans \texttt{k8s/}, \texttt{Secret} pour les identifiants PostgreSQL, \texttt{readinessProbe}/\texttt{livenessProbe} HTTP bas\'ees sur Spring Boot Actuator.
+  \item \textbf{Frontend} : une unique page HTML/CSS/JS (sans framework), servie statiquement par \texttt{api-gateway}, qui route aussi les appels API vers les services internes pour \'eviter le CORS.
+\end{itemize}
+
+\textbf{API Gateway (\texttt{api-gateway}, service 5)} : point d'entr\'ee unique de l'application (:8080), extrait de l'ancien \texttt{ProxyController} de \texttt{motus-game-service} pour se conformer au pattern \emph{API Gateway} du cours. Il centralise :
+\begin{itemize}[nosep]
+  \item le relai des appels vers \texttt{player-service}/\texttt{history-stat-service} (auth, joueurs, stats, classement, recherche admin), avec transfert du header \texttt{Authorization}, erreurs HTTP 4xx/5xx renvoy\'ees telles quelles, panne r\'eseau $\rightarrow$ 503 ;
+  \item le routage g\'en\'erique \texttt{/api/games/**} vers \texttt{motus-game-service}, qui reste d\'esormais purement m\'etier ;
+  \item le service du frontend statique (\texttt{index.html}).
+\end{itemize}
+
+\textbf{R\'esilience (Resilience4j)} : les appels inter-services par \texttt{RestTemplate} sont envelopp\'es dans des clients d\'edi\'es (\texttt{PlayerClient}, \texttt{HistoryClient}, \texttt{DictionaryClient}, \texttt{DownstreamClient}) annot\'es \texttt{@CircuitBreaker}/\texttt{@Retry}. Seules les pannes r\'eseau d\'eclenchent retry puis ouverture du circuit --- une erreur m\'etier 4xx/5xx du service appel\'e est trait\'ee normalement. Objectif : \'eviter qu'une panne d'un service ne fasse \'echouer en cascade toute une partie en cours.
+
+\textbf{Observabilit\'e (Actuator + Prometheus + Grafana)} : chaque service expose \texttt{spring-boot-starter-actuator}, avec des groupes de sant\'e \texttt{readiness}/\texttt{liveness} d\'edi\'es aux probes Kubernetes. Prometheus scrape les 5 services toutes les 15\,s et Grafana permet de visualiser latence, taux d'erreur et JVM/GC en direct.
+
+\textbf{HATEOAS (niveau 3 de Richardson)} : \texttt{spring-boot-starter-hateoas} ajout\'e \`a \texttt{player-service} et \texttt{motus-game-service}. Les liens sont ajout\'es sous une cl\'e \texttt{\_links} s\'epar\'ee, sans impact sur le frontend actuel.
+
+\textbf{CI/CD (GitHub Actions)} : \texttt{.github/workflows/ci.yml} compile et teste (\texttt{mvn verify}) chacun des 5 modules en matrice \`a chaque push/PR sur \texttt{main}, puis valide que les 5 images Docker se construisent.
+
+\textbf{Tests} : JUnit 5 + Mockito pour les contr\^oleurs et services, tests d'int\'egration Spring Boot sur \texttt{player-service} et \texttt{api-gateway}, test d'int\'egration base \texttt{@DataJpaTest} (H2) sur \texttt{history-stat-service}.
+
+\subsection{Robustesse, correction \& exp\'erience de jeu}
+
+\textbf{Codes HTTP s\'emantiques (\texttt{motus-game-service})} : une petite hi\'erarchie d'exceptions (\texttt{NotFoundException} $\rightarrow$ 404, \texttt{InvalidGuessException} $\rightarrow$ 400, \texttt{ServiceUnavailableException} $\rightarrow$ 503) remplace le \texttt{RuntimeException} g\'en\'erique qui retombait syst\'ematiquement en 400.
+
+\textbf{Correctif --- cache du dictionnaire (fiabilit\'e + d\'egradation gracieuse)} : le \texttt{DictionaryClient} conservait un garde \texttt{cache.isEmpty()} pour d\'ecider de recharger le dictionnaire ; or \texttt{ajouterAuCache(motSecret)} ins\`ere le mot secret \`a chaque d\'ebut de partie, si bien qu'apr\`es un \'echec de chargement initial (course au d\'emarrage) le cache n'\'etait plus jamais recharg\'e et \textbf{tous les mots sauf le secret \'etaient refus\'es}. Remplac\'e par un indicateur explicite \texttt{chargeComplet} + un \textbf{repli autoritaire} vers \texttt{/api/dictionary/exists/\{mot\}} si le cache reste incomplet.
+
+\textbf{Performance --- filtrage \& agr\'egation en base (\texttt{history-stat-service})} : la recherche multi-crit\`eres et le classement chargeaient toutes les parties (\texttt{findAll()}) puis filtraient/groupaient en m\'emoire. Ils utilisent d\'esormais des requ\^etes JPQL d\'edi\'ees (\texttt{search(...)}, \texttt{aggregateClassement()}).
+
+\textbf{Partage du score (fa\c{c}on Wordle)} : en fin de partie, un bouton « Partager mon score » g\'en\`ere une grille d'emojis \`a partir de l'\'etat de partie, via l'API Web Share native.
+
+\textbf{Correctif --- recherche multi-crit\`eres sur PostgreSQL r\'eel} : la requ\^ete JPQL \texttt{search(...)} passait le test \texttt{@DataJpaTest} (H2) mais \textbf{\'echouait \`a 100\,\% des appels en base r\'eelle} (\texttt{PSQLException: could not determine data type of parameter}, SQLState 42P18) : PostgreSQL ne peut pas d\'eterminer le type d'un param\`etre qui n'appara\^it que dans un \texttt{? IS NULL} sans autre contexte typ\'e, contrairement \`a H2 qui est plus permissif. Corrig\'e en castant explicitement chaque param\`etre optionnel \textbf{uniquement} dans son test \texttt{IS NULL} (\texttt{CAST(:gagne AS boolean) IS NULL OR p.gagne = :gagne}) ; caster aussi le c\^ot\'e comparaison casse l'inf\'erence de type d'Hibernate pour les param\`etres non num\'eriques (\texttt{cannot cast type bytea to boolean} pour \texttt{:gagne}). Rev\'erifi\'e avec un vrai \texttt{docker compose up} + PostgreSQL sur les 6 combinaisons de param\`etres : toutes renvoient d\'esormais \texttt{200} avec les donn\'ees correctes.
+
+\subsection{D\'eploiement Kubernetes --- stabilit\'e sous MiniKube}
+
+\textbf{Constat} : sous MiniKube (driver Docker), les 5 services + PostgreSQL red\'emarraient en boucle (2 \`a 3 restarts par pod avant stabilisation, 5 \`a 7 minutes de d\'emarrage) alors que les m\^emes images tournaient sans souci en Docker Compose.
+
+\textbf{Cause} : \texttt{kubectl describe node} annonce 8 CPU / 7,6\,Gi de RAM (valeurs lues c\^ot\'e h\^ote), mais le conteneur Docker du n\oe{}ud MiniKube est en r\'ealit\'e plafonn\'e en dur par cgroup \`a 2 CPU / 4\,Go. Aucun des 5 \texttt{Deployment} ne d\'eclarait de \texttt{resources.requests/limits} ni de r\'eglage de heap JVM (contrairement \`a \texttt{docker-compose.yml}, qui d\'efinit d\'ej\`a \texttt{JAVA\_TOOL\_OPTIONS}/\texttt{mem\_limit}) : les 6 JVM se disputaient un budget CPU r\'eel bien inf\'erieur \`a ce que Kubernetes croyait disponible, le d\'emarrage de Spring Boot d\'epassait alors les seuils des probes, et le kubelet tuait puis relan\c{c}ait les pods en boucle.
+
+\textbf{Correctifs} :
+\begin{itemize}[nosep]
+  \item Cluster relanc\'e avec des ressources r\'eelles align\'ees sur ce que Kubernetes annonce (\texttt{minikube start --cpus=4 --memory=6144}).
+  \item Ajout de \texttt{resources.requests/limits} + \texttt{JAVA\_TOOL\_OPTIONS: -XX:MaxRAMPercentage=65 -Xss512k} dans les 5 manifests (\texttt{k8s/*.yaml}), en reprenant les valeurs m\'emoire d\'ej\`a d\'efinies dans \texttt{docker-compose.yml}.
+  \item Cache Maven partag\'e entre builds (\texttt{RUN --mount=type=cache,id=m2-repo,target=/root/.m2}) dans les 5 \texttt{Dockerfile}, pour ne pas ret\'el\'echarger tout l'arbre de d\'ependances \`a chaque \texttt{docker build} (temps de build divis\'e par 2 \`a 10 selon le service --- sans impact sur l'ind\'ependance runtime de chaque microservice, qui reste un JAR autonome d\'eployable seul).
+\end{itemize}
+
+\textbf{R\'esultat} : les 6 pods atteignent \texttt{1/1 Running} en \textasciitilde{}80 secondes sans aucun restart (contre 5-7 minutes et 2-3 restarts/pod auparavant).
+
+\vspace{1em}\hrule\vspace{1.5em}
+
+\section{Bilan du projet}
+
+\textbf{Ce que nous avons aim\'e} --- D\'ecouper une application en microservices ind\'ependants, chacun avec sa base de donn\'ees et sa responsabilit\'e propre, et les faire collaborer par API REST. Voir concr\`etement l'int\'er\^et du pattern \emph{proxy/fa\c{c}ade} pour donner au frontend un point d'entr\'ee unique sans exposer ni CORSer les autres services.
+
+\textbf{Ce que nous avons appris} --- La mise en place de l'authentification JWT stateless partag\'ee entre plusieurs services ; les pi\`eges classiques de Jackson (\texttt{@JsonIgnore} bloque aussi la d\'es\'erialisation, pas seulement la s\'erialisation) ; l'importance de \texttt{@Transactional} pour les m\'ethodes de suppression d\'eriv\'ees de Spring Data JPA ; la configuration Kubernetes (probes, secrets, \texttt{Deployment}/\texttt{Service}) et son couplage avec les r\`egles de s\'ecurit\'e applicative ; l'importance de toujours \'echapper les donn\'ees utilisateur affich\'ees c\^ot\'e client pour \'eviter les failles XSS.
+
+\textbf{Ce que nous avons moins aim\'e} --- Le dictionnaire de mots fourni (\texttt{mots.txt}) est un lexique brut de formes fl\'echies, pas une liste de mots courants : on y trouve beaucoup de conjugaisons rares, ce qui rend le jeu localement plus difficile qu'un Motus « grand public ».
+
+\textbf{R\'eussites} --- Architecture microservices fonctionnelle de bout en bout (inscription, partie, historisation, statistiques, classement, administration) ; s\'ecurisation ajout\'ee sans casser le parcours joueur existant ; suppression en cascade d'un compte et de son historique \`a travers deux services ind\'ependants ; d\'eploiement test\'e en local, en Docker Compose et en manifests Kubernetes. Apr\`es relecture du cours, quatre \'ecarts identifi\'es ont \'et\'e combl\'es sans r\'egression (33 tests toujours au vert sur \texttt{motus-game-service}, 11 sur \texttt{player-service}) : extraction d'une \textbf{API Gateway} d\'edi\'ee, \textbf{observabilit\'e} (Actuator + Prometheus/Grafana), \textbf{r\'esilience} (Resilience4j) et une premi\`ere \textbf{pipeline CI} (GitHub Actions).
+
+\textbf{Difficult\'es} --- Plusieurs bugs subtils d\'ecouverts en testant r\'eellement chaque fonctionnalit\'e plut\^ot qu'en se fiant \`a la seule compilation : une d\'ependance Jackson manquante en scope \emph{compile} faisait planter \texttt{motus-game-service} au d\'emarrage ; le renommage de certains packages d'auto-configuration Spring Security entre versions de Spring Boot ; une image Docker reconstruite mais pas red\'eploy\'ee (cache) qui masquait un correctif d\'ej\`a appliqu\'e ; une faille XSS stock\'ee d\'etect\'ee en revue de code puis corrig\'ee ; une requ\^ete JPQL \`a param\`etres optionnels valid\'ee par un test \texttt{@DataJpaTest} (H2) mais cass\'ee \`a 100\,\% sur PostgreSQL r\'eel --- un rappel que « les tests passent » ne remplace pas un run r\'eel contre l'infrastructure cible ; et, c\^ot\'e MiniKube, un n\oe{}ud dont le vrai plafond cgroup (CPU/RAM) ne correspondait pas \`a ce que \texttt{kubectl describe node} annon\c{c}ait, provoquant des red\'emarrages en boucle des pods faute de \texttt{resources.requests/limits} d\'eclar\'ees.
+
+\end{document}

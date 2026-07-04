@@ -18,6 +18,16 @@ spec:
           imagePullPolicy: Never
           ports:
             - containerPort: 8082
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=65 -Xss512k"
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "300Mi"
+            limits:
+              cpu: "750m"
+              memory: "450Mi"
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

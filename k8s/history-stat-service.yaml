@@ -31,6 +31,15 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: password
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=65 -Xss512k"
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "256Mi"
+            limits:
+              cpu: "750m"
+              memory: "384Mi"
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
