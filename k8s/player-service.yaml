@@ -12,6 +12,13 @@ spec:
       labels:
         app: player-service
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done
       containers:
         - name: player-service
           image: player-service:latest
