@@ -21,13 +21,23 @@ public interface PartieRepository extends JpaRepository<Partie, Long> {
      * Chaque filtre est ignoré quand son paramètre vaut {@code null}, ce qui évite de
      * charger toutes les parties en mémoire pour les filtrer côté application.
      * Le filtre "date" est traduit par le contrôleur en intervalle [debut, fin[ d'une journée.
+     *
+     * Le test "IS NULL" de chaque paramètre optionnel est explicitement casté : sans ça,
+     * PostgreSQL ne peut pas déterminer le type d'un paramètre qui n'apparaît que dans un
+     * "? IS NULL" sans autre contexte typé (erreur "could not determine data type of
+     * parameter", SQLState 42P18) — H2 (utilisé par le test @DataJpaTest) est plus permissif
+     * et masque ce problème, mais la requête plante à 100% en base réelle sans ce cast.
+     * Le second usage de chaque paramètre (la comparaison, ex. {@code p.gagne = :gagne})
+     * reste volontairement non casté : Hibernate y infère déjà correctement le type depuis
+     * l'attribut de l'entité, et caster aussi cette occurrence casse cette inférence pour
+     * les paramètres non-numériques (ex. "cannot cast type bytea to boolean" pour :gagne).
      */
     @Query("""
         SELECT p FROM Partie p
-        WHERE (:joueurId IS NULL OR p.joueurId = :joueurId)
-          AND (:gagne    IS NULL OR p.gagne = :gagne)
-          AND (:debut    IS NULL OR p.dateFin >= :debut)
-          AND (:fin      IS NULL OR p.dateFin <  :fin)
+        WHERE (CAST(:joueurId AS long)     IS NULL OR p.joueurId = :joueurId)
+          AND (CAST(:gagne    AS boolean)  IS NULL OR p.gagne = :gagne)
+          AND (CAST(:debut    AS timestamp) IS NULL OR p.dateFin >= :debut)
+          AND (CAST(:fin      AS timestamp) IS NULL OR p.dateFin <  :fin)
         ORDER BY p.dateFin DESC
         """)
     List<Partie> search(@Param("joueurId") Long joueurId,
