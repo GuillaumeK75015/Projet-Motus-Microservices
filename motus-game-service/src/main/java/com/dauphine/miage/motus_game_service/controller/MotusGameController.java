@@ -38,6 +38,12 @@ public class MotusGameController {
         return ResponseEntity.ok(addLinks(motusGameService.guess(id, request.getMot())));
     }
 
+    // POST http://localhost:8084/api/games/1/abandon
+    @PostMapping("/{id}/abandon")
+    public ResponseEntity<GameStateDto> abandon(@PathVariable Long id) {
+        return ResponseEntity.ok(addLinks(motusGameService.abandon(id)));
+    }
+
     // GET http://localhost:8084/api/games/1
     @GetMapping("/{id}")
     public ResponseEntity<GameStateDto> getGame(@PathVariable Long id) {
@@ -61,6 +67,7 @@ public class MotusGameController {
         dto.add(linkTo(methodOn(MotusGameController.class).getGame(dto.getId())).withSelfRel());
         if (StatutJeu.EN_COURS.name().equals(dto.getStatut())) {
             dto.add(linkTo(methodOn(MotusGameController.class).guess(dto.getId(), null)).withRel("guess"));
+            dto.add(linkTo(methodOn(MotusGameController.class).abandon(dto.getId())).withRel("abandon"));
         }
         dto.add(linkTo(methodOn(MotusGameController.class).getGamesByPlayer(dto.getJoueurId())).withRel("gamesByPlayer"));
         return dto;

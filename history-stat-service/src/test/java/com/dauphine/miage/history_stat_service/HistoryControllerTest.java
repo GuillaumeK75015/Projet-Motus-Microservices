@@ -145,6 +145,24 @@ class HistoryControllerTest {
         assertThat(j10.getTauxVictoire()).isEqualTo(50.0);
     }
 
+    // Les deux joueurs de getClassement_calculeTauxEtRang ont le même nombre de victoires (1) :
+    // un tri qui inverserait par erreur le nombre de victoires (au lieu du seul taux en cas
+    // d'égalité) passerait quand même ce test. Ce cas couvre explicitement des victoires
+    // différentes, pour garantir que le joueur le plus gagnant est bien classé premier.
+    @Test
+    void getClassement_trieParVictoiresDecroissantes() {
+        // joueur 1 : 1 jouée / 0 gagnée ; joueur 2 : 6 jouées / 5 gagnées
+        when(partieRepository.aggregateClassement())
+                .thenReturn(List.of(row(1L, 1, 0), row(2L, 6, 5)));
+
+        List<ClassementDto> classement = historyController.getClassement();
+
+        assertThat(classement.get(0).getJoueurId()).isEqualTo(2L);
+        assertThat(classement.get(0).getRang()).isEqualTo(1);
+        assertThat(classement.get(1).getJoueurId()).isEqualTo(1L);
+        assertThat(classement.get(1).getRang()).isEqualTo(2);
+    }
+
     @Test
     void getClassement_tableauVide_retourneListeVide() {
         when(partieRepository.aggregateClassement()).thenReturn(List.of());

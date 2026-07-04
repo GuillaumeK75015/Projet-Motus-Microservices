@@ -105,7 +105,7 @@ public class HistoryController {
                 })
                 .sorted(Comparator
                         .comparingInt(ClassementDto::getPartiesGagnees).reversed()
-                        .thenComparingDouble(ClassementDto::getTauxVictoire).reversed())
+                        .thenComparing(Comparator.comparingDouble(ClassementDto::getTauxVictoire).reversed()))
                 .peek(dto -> dto.setRang(rang.getAndIncrement()))
                 .collect(Collectors.toList());
     }

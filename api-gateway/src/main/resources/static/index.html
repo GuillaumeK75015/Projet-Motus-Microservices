@@ -325,6 +325,7 @@
     <input type="text" id="inp-guess" placeholder="Votre mot…" maxlength="25"
            onkeydown="if(event.key==='Enter')submitGuess()"/>
     <button class="btn btn-green" onclick="submitGuess()">OK</button>
+    <button class="btn btn-grey" onclick="abandonGame()">Abandonner</button>
   </div>
 
   <!-- SHARE (visible en fin de partie) -->
@@ -681,6 +682,20 @@
       msg(game.message, 'info');
       $('inp-guess').focus();
     }
+  }
+
+  async function abandonGame() {
+    if (!gameId || gameOver) return;
+    if (!confirm('Abandonner cette partie ? Le mot sera révélé et la partie comptera comme une défaite (0 point).')) return;
+
+    const r = await apiPost('/api/games/' + gameId + '/abandon', {});
+    if (!r.ok) { msg('Erreur lors de l\'abandon.', 'error'); return; }
+
+    const game = await r.json();
+    gameOver = true;
+    renderGame(game);
+    hide('guess-row'); show('share-btn');
+    msg('🏳️ ' + game.message, 'defeat');
   }
 
   /* ── Board rendering ────────────────────────────────────────────────── */

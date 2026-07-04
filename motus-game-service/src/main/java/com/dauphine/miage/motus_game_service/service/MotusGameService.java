@@ -157,19 +157,57 @@ public class MotusGameService {
 
         boolean allCorrect = Arrays.stream(feedbackArray).allMatch("BIEN_PLACE"::equals);
 
-        if (allCorrect) {
+        boolean gagne = allCorrect;
+        boolean perdu = !allCorrect && jeu.getTentatives().size() >= jeu.getTentativesMax();
+        if (gagne) {
             jeu.setStatut(StatutJeu.GAGNE);
+        } else if (perdu) {
+            jeu.setStatut(StatutJeu.PERDU);
+        }
+
+        // Flush synchrone avant tout enregistrement d'historique : si la sauvegarde échoue
+        // (contrainte violée, base indisponible...), l'exception remonte ici et l'appel
+        // asynchrone fire-and-forget vers history-service n'est jamais déclenché — on évite
+        // ainsi un historique enregistré pour une partie qui, elle, n'a pas été persistée.
+        GameStateDto dto = toDto(jeuRepository.saveAndFlush(jeu));
+
+        if (gagne) {
             adminLog.info("[ADMIN] Partie {} — GAGNÉE par joueur {} en {} essai(s) (mot : {})",
                     jeuId, jeu.getJoueurId(), jeu.getTentatives().size(), motSecret);
             enregistrerHistorique(jeu, true);
-        } else if (jeu.getTentatives().size() >= jeu.getTentativesMax()) {
-            jeu.setStatut(StatutJeu.PERDU);
+        } else if (perdu) {
             adminLog.info("[ADMIN] Partie {} — PERDUE par joueur {} après {} essais (mot secret : {})",
                     jeuId, jeu.getJoueurId(), jeu.getTentatives().size(), motSecret);
             enregistrerHistorique(jeu, false);
         }
 
-        return toDto(jeuRepository.save(jeu));
+        return dto;
+    }
+
+    // ── Abandon ───────────────────────────────────────────────────────────────
+
+    /**
+     * Abandonne une partie en cours : révèle le mot secret, ne rapporte aucun point
+     * (comptée comme défaite pour l'historique et le classement), et clôt la partie —
+     * le joueur doit démarrer une nouvelle partie pour rejouer.
+     */
+    @Transactional
+    public GameStateDto abandon(Long jeuId) {
+        Jeu jeu = jeuRepository.findByIdWithTentatives(jeuId)
+                .orElseThrow(() -> new NotFoundException("Partie introuvable avec l'id : " + jeuId));
+
+        if (jeu.getStatut() != StatutJeu.EN_COURS) {
+            throw new InvalidGuessException("Cette partie est déjà terminée (statut : " + jeu.getStatut() + ")");
+        }
+
+        jeu.setStatut(StatutJeu.ABANDONNE);
+        GameStateDto dto = toDto(jeuRepository.saveAndFlush(jeu));
+
+        adminLog.info("[ADMIN] Partie {} — ABANDONNÉE par joueur {} après {} essai(s) (mot secret : {})",
+                jeuId, jeu.getJoueurId(), jeu.getTentatives().size(), jeu.getMotSecret());
+        enregistrerHistorique(jeu, false);
+
+        return dto;
     }
 
     // ── Lecture (readOnly = true → snapshot isolation, pas de dirty check) ────
@@ -230,9 +268,10 @@ public class MotusGameService {
 
     private String buildMessage(Jeu jeu) {
         return switch (jeu.getStatut()) {
-            case GAGNE -> "Mot trouvé en " + jeu.getTentatives().size() + " essai(s) !";
-            case PERDU -> "Le mot était : " + jeu.getMotSecret();
-            default    -> jeu.getTentativesMax() - jeu.getTentatives().size() + " essai(s) restant(s).";
+            case GAGNE     -> "Mot trouvé en " + jeu.getTentatives().size() + " essai(s) !";
+            case PERDU     -> "Le mot était : " + jeu.getMotSecret();
+            case ABANDONNE -> "Partie abandonnée. Le mot était : " + jeu.getMotSecret();
+            default        -> jeu.getTentativesMax() - jeu.getTentatives().size() + " essai(s) restant(s).";
         };
     }
 

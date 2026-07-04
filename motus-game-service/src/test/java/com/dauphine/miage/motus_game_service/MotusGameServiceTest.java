@@ -23,6 +23,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -179,7 +181,7 @@ class MotusGameServiceTest {
     void guess_motCorrect_retourneStatutGagne() {
         when(jeuRepository.findByIdWithTentatives(1L)).thenReturn(Optional.of(jeuEnCours));
         when(dictionaryClient.motExiste(MOT_SECRET)).thenReturn(true);
-        when(jeuRepository.save(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jeuRepository.saveAndFlush(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
 
         GameStateDto dto = service.guess(1L, MOT_SECRET);
 
@@ -206,7 +208,7 @@ class MotusGameServiceTest {
 
         when(jeuRepository.findByIdWithTentatives(1L)).thenReturn(Optional.of(jeuEnCours));
         when(dictionaryClient.motExiste("MINUTES")).thenReturn(true);
-        when(jeuRepository.save(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jeuRepository.saveAndFlush(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
 
         GameStateDto dto = service.guess(1L, "MINUTES"); // 6e tentative, différente des précédentes
 
@@ -221,7 +223,7 @@ class MotusGameServiceTest {
     void guess_tentativeIntermediaire_statutEnCours() {
         when(jeuRepository.findByIdWithTentatives(1L)).thenReturn(Optional.of(jeuEnCours));
         when(dictionaryClient.motExiste("MERCURE")).thenReturn(true);
-        when(jeuRepository.save(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jeuRepository.saveAndFlush(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
 
         GameStateDto dto = service.guess(1L, "MERCURE");
 
@@ -230,6 +232,43 @@ class MotusGameServiceTest {
         assertThat(dto.getTentativesEffectuees()).isEqualTo(1);
         assertThat(dto.getTentativesRestantes()).isEqualTo(5);
         assertThat(dto.getMessage()).contains("5").contains("restant");
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  abandon()
+    // ═══════════════════════════════════════════════════════════
+
+    @Test
+    void abandon_partieEnCours_statutAbandonneEtMotRevele() {
+        when(jeuRepository.findByIdWithTentatives(1L)).thenReturn(Optional.of(jeuEnCours));
+        when(jeuRepository.saveAndFlush(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        GameStateDto dto = service.abandon(1L);
+
+        assertThat(dto.getStatut()).isEqualTo("ABANDONNE");
+        assertThat(dto.getMotSecret()).isEqualTo(MOT_SECRET);
+        assertThat(dto.getMessage()).contains("abandonnée").contains(MOT_SECRET);
+    }
+
+    @Test
+    void abandon_enregistreCommeDefaiteDansHistorique() {
+        when(jeuRepository.findByIdWithTentatives(1L)).thenReturn(Optional.of(jeuEnCours));
+        when(jeuRepository.saveAndFlush(any(Jeu.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.abandon(1L);
+
+        verify(historyClient).enregistrer(argThat(body ->
+                Boolean.FALSE.equals(body.get("gagne")) && Long.valueOf(10L).equals(body.get("joueurId"))));
+    }
+
+    @Test
+    void abandon_partieDejaTerminee_leveException() {
+        jeuEnCours.setStatut(StatutJeu.GAGNE);
+        when(jeuRepository.findByIdWithTentatives(1L)).thenReturn(Optional.of(jeuEnCours));
+
+        assertThatThrownBy(() -> service.abandon(1L))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("GAGNE");
     }
 
     // ═══════════════════════════════════════════════════════════

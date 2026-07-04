@@ -38,6 +38,8 @@ spec:
                 secretKeyRef:
                   name: postgres-secret
                   key: password
+            - name: SERVICES_HISTORY_URL
+              value: http://history-stat-service:8083
             - name: JAVA_TOOL_OPTIONS
               value: "-XX:MaxRAMPercentage=65 -Xss512k"
           resources:
