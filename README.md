@@ -20,8 +20,8 @@ Master 2 MIAGE SITN Apprentissage – 2025/2026
 │db_players  │  │:8082        │  │db_history           │  │Logique du jeu       │
 │Joueurs     │  │Mots (RAM)   │  │Parties + Stats      │  └─────────────────────┘
 └────────────┘  └─────────────┘  └─────────────────────┘
-          │           │                    │
-          └───────────┴────────────────────┘
+          │                                │
+          └────────────────────────────────┘
                          PostgreSQL :5432
 
   Prometheus :9090  ──(scrape /actuator/prometheus)──  Grafana :3000
