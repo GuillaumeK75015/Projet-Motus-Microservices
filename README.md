@@ -109,8 +109,8 @@ kubectl apply -f k8s/history-stat-service.yaml
 kubectl apply -f k8s/motus-game-service.yaml
 kubectl apply -f k8s/api-gateway.yaml
 
-# 5. Attendre que tout soit prêt
-kubectl get pods --watch
+# 5. Attendre que tout soit prêt (rend la main automatiquement, pas besoin de Ctrl+C)
+kubectl wait --for=condition=ready pod --all --timeout=180s
 
 # 6. Obtenir l'URL de l'interface
 minikube service api-gateway --url
