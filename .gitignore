@@ -11,3 +11,9 @@ target/
 
 .DS_Store
 Thumbs.db
+
+# Supports de cours (fournis par l'enseignant, pas des livrables du projet)
+MIAGE - Architectures Microservices (I).pdf
+MIAGE-Architectures Microservices (II).pdf
+MIAGE-Architectures Microservices (III).pdf
+MIAGE - Architectures Microservices (IV).pdf

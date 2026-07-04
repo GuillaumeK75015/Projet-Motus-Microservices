@@ -25,6 +25,15 @@ spec:
               value: http://history-stat-service:8083
             - name: SERVICES_GAME_URL
               value: http://motus-game-service:8084
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=65 -Xss512k"
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "300Mi"
+            limits:
+              cpu: "750m"
+              memory: "450Mi"
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

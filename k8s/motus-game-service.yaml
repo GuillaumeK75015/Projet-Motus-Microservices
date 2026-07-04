@@ -37,6 +37,15 @@ spec:
               value: http://dictionary-service:8082
             - name: SERVICES_HISTORY_URL
               value: http://history-stat-service:8083
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=65 -Xss512k"
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "220Mi"
+            limits:
+              cpu: "750m"
+              memory: "320Mi"
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness
