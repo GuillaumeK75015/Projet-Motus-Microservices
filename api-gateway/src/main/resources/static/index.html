@@ -344,7 +344,31 @@
       <div class="stat-item"><span class="stat-num" id="s-rate">—</span><span class="stat-lbl">% Victoires</span></div>
       <div class="stat-item"><span class="stat-num" id="s-avg">—</span><span class="stat-lbl">Moy. essais</span></div>
     </div>
+    <button class="btn btn-grey btn-full" onclick="openHistory()">Historique</button>
     <button class="btn btn-grey btn-full" onclick="closeStats()">Fermer</button>
+  </div>
+</div>
+
+<!-- HISTORIQUE MODAL -->
+<div class="modal" id="history-modal" onclick="if(event.target===this)closeHistory()">
+  <div class="modal-box" style="width:420px">
+    <h2>MON HISTORIQUE</h2>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;text-align:left">
+      <div style="display:flex;gap:8px">
+        <input type="date" id="hist-date" style="flex:1;color-scheme:dark" onchange="historySearch()"/>
+        <select id="hist-gagne" onchange="historySearch()" style="flex:1;background:#121213;border:2px solid #3a3a3c;border-radius:8px;color:#fff;padding:11px">
+          <option value="">Résultat : tous</option>
+          <option value="true">Gagnées</option>
+          <option value="false">Perdues</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="hist-mot" placeholder="Mot…" style="flex:1" oninput="historySearchDebounced()"/>
+        <button class="btn btn-grey" style="flex:1" onclick="historyResetFilters()">Réinitialiser</button>
+      </div>
+    </div>
+    <div id="history-results" style="max-height:320px;overflow-y:auto;font-size:.82rem;text-align:left"></div>
+    <button class="btn btn-grey btn-full" style="margin-top:14px" onclick="closeHistory()">Fermer</button>
   </div>
 </div>
 
@@ -773,6 +797,66 @@
     $('stats-modal').classList.add('open');
   }
   function closeStats() { $('stats-modal').classList.remove('open'); }
+
+  /* ── Historique (joueur, filtrable) ────────────────────────────────────── */
+  let historySearchDebounce = null;
+
+  async function openHistory() {
+    if (!playerId) return;
+    $('hist-date').value = ''; $('hist-gagne').value = ''; $('hist-mot').value = '';
+    $('history-modal').classList.add('open');
+    await historySearch();
+  }
+  function closeHistory() { $('history-modal').classList.remove('open'); }
+
+  function historyResetFilters() {
+    $('hist-date').value = ''; $('hist-gagne').value = ''; $('hist-mot').value = '';
+    historySearch();
+  }
+
+  function historySearchDebounced() {
+    clearTimeout(historySearchDebounce);
+    historySearchDebounce = setTimeout(historySearch, 400);
+  }
+
+  async function historySearch() {
+    if (!playerId) return;
+    const date  = get('hist-date').trim();
+    const gagne = get('hist-gagne');
+    const mot   = get('hist-mot').trim();
+    const params = new URLSearchParams();
+    if (date)  params.set('date', date);
+    if (gagne) params.set('gagne', gagne);
+    if (mot)   params.set('mot', mot);
+
+    const r = await apiGet('/api/proxy/history/' + playerId + '?' + params.toString());
+    if (!r.ok) { $('history-results').innerHTML = '<p style="color:#818384">Erreur de chargement.</p>'; return; }
+    renderHistoryResults(await r.json());
+  }
+
+  function renderHistoryResults(parties) {
+    if (!parties || parties.length === 0) {
+      $('history-results').innerHTML = '<p style="color:#818384">Aucune partie trouvée.</p>';
+      return;
+    }
+    const rows = parties.map(p => `
+      <tr>
+        <td>${esc(p.motSecret ?? '')}</td>
+        <td>${p.nombreTentatives}</td>
+        <td>${p.gagne ? '✅' : '❌'}</td>
+        <td>${p.dateFin ? p.dateFin.replace('T', ' ').slice(0, 16) : ''}</td>
+      </tr>`).join('');
+    $('history-results').innerHTML = `
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="color:#818384;text-align:left">
+            <th style="padding:4px">Mot</th><th style="padding:4px">Essais</th>
+            <th style="padding:4px">Résultat</th><th style="padding:4px">Date</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }
 
   /* ── Classement ─────────────────────────────────────────────────────── */
   async function openClassement() {

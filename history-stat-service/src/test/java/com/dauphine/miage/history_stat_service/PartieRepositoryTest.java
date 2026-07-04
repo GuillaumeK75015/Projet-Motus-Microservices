@@ -28,9 +28,13 @@ class PartieRepositoryTest {
     private PartieRepository repo;
 
     private Partie partie(Long joueur, boolean gagne, int tentatives, LocalDateTime dateFin) {
+        return partie(joueur, gagne, tentatives, dateFin, "MAISONS");
+    }
+
+    private Partie partie(Long joueur, boolean gagne, int tentatives, LocalDateTime dateFin, String motSecret) {
         Partie p = new Partie();
         p.setJoueurId(joueur);
-        p.setMotSecret("MAISONS");
+        p.setMotSecret(motSecret);
         p.setNombreTentatives(tentatives);
         p.setGagne(gagne);
         p.setDateFin(dateFin);
@@ -72,6 +76,27 @@ class PartieRepositoryTest {
     @Test
     void search_combineJoueurEtGagne() {
         assertThat(repo.search(10L, true, null, null)).hasSize(1);
+    }
+
+    @Test
+    void searchByJoueurId_neVoitQueSesPropresParties() {
+        assertThat(repo.searchByJoueurId(10L, null, null, null, null)).hasSize(2);
+        assertThat(repo.searchByJoueurId(20L, null, null, null, null)).hasSize(1);
+    }
+
+    @Test
+    void searchByJoueurId_parGagne() {
+        assertThat(repo.searchByJoueurId(10L, true,  null, null, null)).hasSize(1);
+        assertThat(repo.searchByJoueurId(10L, false, null, null, null)).hasSize(1);
+    }
+
+    @Test
+    void searchByJoueurId_parMot_sousChaineInsensibleALaCasse() {
+        repo.save(partie(10L, true, 4, LocalDate.of(2026, 7, 1).atTime(9, 0), "PARAPLUIE"));
+
+        assertThat(repo.searchByJoueurId(10L, null, null, null, "maison")).hasSize(2);
+        assertThat(repo.searchByJoueurId(10L, null, null, null, "para")).hasSize(1);
+        assertThat(repo.searchByJoueurId(10L, null, null, null, "inexistant")).isEmpty();
     }
 
     @Test

@@ -74,20 +74,32 @@ class HistoryControllerTest {
 
     @Test
     void getHistoryByPlayer_retourneListeParties() {
-        when(partieRepository.findByJoueurId(10L)).thenReturn(List.of(partieGagnee, partiePerdue));
+        when(partieRepository.searchByJoueurId(eq(10L), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(List.of(partieGagnee, partiePerdue));
 
-        List<Partie> result = historyController.getHistoryByPlayer(10L);
+        List<Partie> result = historyController.getHistoryByPlayer(10L, null, null, null);
 
         assertThat(result).hasSize(2);
     }
 
     @Test
     void getHistoryByPlayer_aucunePartie_retourneListeVide() {
-        when(partieRepository.findByJoueurId(99L)).thenReturn(List.of());
+        when(partieRepository.searchByJoueurId(eq(99L), isNull(), isNull(), isNull(), isNull()))
+                .thenReturn(List.of());
 
-        List<Partie> result = historyController.getHistoryByPlayer(99L);
+        List<Partie> result = historyController.getHistoryByPlayer(99L, null, null, null);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getHistoryByPlayer_filtreParGagneEtMot_transmetLesFiltres() {
+        when(partieRepository.searchByJoueurId(eq(10L), eq(true), isNull(), isNull(), eq("MAI")))
+                .thenReturn(List.of(partieGagnee));
+
+        List<Partie> result = historyController.getHistoryByPlayer(10L, null, true, "MAI");
+
+        assertThat(result).containsExactly(partieGagnee);
     }
 
     // ── Statistiques ──────────────────────────────────────────────────────────

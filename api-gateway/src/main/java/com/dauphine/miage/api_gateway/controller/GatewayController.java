@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -91,6 +93,24 @@ public class GatewayController {
     @GetMapping("/api/proxy/stats/{joueurId}")
     public ResponseEntity<String> getStats(@PathVariable Long joueurId) {
         return forwardHistory(HttpMethod.GET, historyServiceUrl + "/api/history/stats/" + joueurId, null, null);
+    }
+
+    /**
+     * Historique d'un joueur (filtrable par date / résultat / mot) — réservé à ses propres
+     * parties, contrairement à {@link #searchParties} qui reste ADMIN uniquement.
+     * GET /api/proxy/history/1?date=2026-06-29&gagne=true&mot=motus
+     */
+    @GetMapping("/api/proxy/history/{joueurId}")
+    public ResponseEntity<String> getHistoryByPlayer(
+            @PathVariable Long joueurId,
+            @RequestParam(required = false) String date,
+            @RequestParam(required = false) Boolean gagne,
+            @RequestParam(required = false) String mot) {
+        StringBuilder url = new StringBuilder(historyServiceUrl + "/api/history/player/" + joueurId + "?");
+        if (date  != null) url.append("date=").append(date).append("&");
+        if (gagne != null) url.append("gagne=").append(gagne).append("&");
+        if (mot   != null) url.append("mot=").append(URLEncoder.encode(mot, StandardCharsets.UTF_8));
+        return forwardHistory(HttpMethod.GET, url.toString(), null, null);
     }
 
     @GetMapping("/api/proxy/classement")

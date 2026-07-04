@@ -36,10 +36,20 @@ public class HistoryController {
 
     // ── Lecture joueur ────────────────────────────────────────────────────────
 
-    // GET http://localhost:8083/api/history/player/1
+    /**
+     * Historique d'un joueur, filtrable par date / résultat / mot (tous optionnels).
+     * GET http://localhost:8083/api/history/player/1?date=2026-06-29&gagne=true&mot=motus
+     */
     @GetMapping("/player/{joueurId}")
-    public List<Partie> getHistoryByPlayer(@PathVariable Long joueurId) {
-        return partieRepository.findByJoueurId(joueurId);
+    public List<Partie> getHistoryByPlayer(
+            @PathVariable Long joueurId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) Boolean gagne,
+            @RequestParam(required = false) String mot) {
+
+        LocalDateTime debut = (date != null) ? date.atStartOfDay()            : null;
+        LocalDateTime fin   = (date != null) ? date.plusDays(1).atStartOfDay() : null;
+        return partieRepository.searchByJoueurId(joueurId, gagne, debut, fin, mot);
     }
 
     // Suppression de tout l'historique d'un joueur (appelé lors de la suppression du compte) :

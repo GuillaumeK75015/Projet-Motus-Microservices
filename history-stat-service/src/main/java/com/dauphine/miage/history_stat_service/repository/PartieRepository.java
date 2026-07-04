@@ -46,6 +46,30 @@ public interface PartieRepository extends JpaRepository<Partie, Long> {
                         @Param("fin")      LocalDateTime fin);
 
     /**
+     * Historique filtré d'un seul joueur (date / gagné-perdu / mot), utilisé par l'écran
+     * "Mon historique" côté joueur — contrairement à {@link #search}, joueurId n'est jamais
+     * optionnel ici : un joueur ne doit voir que ses propres parties.
+     * Le filtre "mot" est une recherche insensible à la casse sur une sous-chaîne du mot secret.
+     * Comme pour les autres filtres, :mot est explicitement casté (y compris dans le CONCAT) :
+     * sans ça, PostgreSQL ne sait pas déterminer son type ("function upper(bytea) does not
+     * exist") alors que H2 laisse passer la requête sans broncher.
+     */
+    @Query("""
+        SELECT p FROM Partie p
+        WHERE p.joueurId = :joueurId
+          AND (CAST(:gagne AS boolean)   IS NULL OR p.gagne = :gagne)
+          AND (CAST(:debut AS timestamp) IS NULL OR p.dateFin >= :debut)
+          AND (CAST(:fin   AS timestamp) IS NULL OR p.dateFin <  :fin)
+          AND (CAST(:mot AS string) IS NULL OR UPPER(p.motSecret) LIKE UPPER(CONCAT('%', CAST(:mot AS string), '%')))
+        ORDER BY p.dateFin DESC
+        """)
+    List<Partie> searchByJoueurId(@Param("joueurId") Long joueurId,
+                                   @Param("gagne")    Boolean gagne,
+                                   @Param("debut")    LocalDateTime debut,
+                                   @Param("fin")      LocalDateTime fin,
+                                   @Param("mot")      String mot);
+
+    /**
      * Agrégat du classement : une seule ligne par joueur (parties jouées / gagnées),
      * calculé côté base plutôt qu'en chargeant toutes les parties et en les groupant en mémoire.
      */
