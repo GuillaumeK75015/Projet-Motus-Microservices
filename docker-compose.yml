@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
   # ── Base de données ────────────────────────────────────────────────────────
@@ -14,6 +12,7 @@ services:
       - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
     ports:
       - "5432:5432"
+    mem_limit: 256m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -23,6 +22,8 @@ services:
       - motus-net
 
   # ── Microservices ──────────────────────────────────────────────────────────
+  # mem_limit + JAVA_TOOL_OPTIONS : sans limite, chaque JVM dimensionne son heap
+  # sur la RAM totale de la VM Docker (heap énorme × 6 services → saturation mémoire).
   player-service:
     build: ./player-service
     ports:
@@ -31,6 +32,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/db_players
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: root
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k"
+    mem_limit: 384m
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,6 +45,9 @@ services:
     build: ./dictionary-service
     ports:
       - "8082:8082"
+    environment:
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k"
+    mem_limit: 450m
     networks:
       - motus-net
 
@@ -53,6 +59,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/db_history
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: root
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k"
+    mem_limit: 384m
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,6 +79,8 @@ services:
       SERVICES_PLAYER_URL: http://player-service:8081
       SERVICES_DICTIONARY_URL: http://dictionary-service:8082
       SERVICES_HISTORY_URL: http://history-stat-service:8083
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k"
+    mem_limit: 450m
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,6 +103,8 @@ services:
       SERVICES_PLAYER_URL: http://player-service:8081
       SERVICES_HISTORY_URL: http://history-stat-service:8083
       SERVICES_GAME_URL: http://motus-game-service:8084
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k"
+    mem_limit: 320m
     depends_on:
       player-service:
         condition: service_started
@@ -104,9 +116,12 @@ services:
     networks:
       - motus-net
 
-  # ── Observabilité ───────────────────────────────────────────────────────────
+  # ── Observabilité (optionnelle) ─────────────────────────────────────────────
+  # Ne démarre PAS par défaut (profil "observability") pour économiser la RAM.
+  # Activer avec : docker-compose --profile observability up
   prometheus:
     image: prom/prometheus:latest
+    profiles: ["observability"]
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
     ports:
@@ -116,6 +131,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    profiles: ["observability"]
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin

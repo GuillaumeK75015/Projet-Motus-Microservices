@@ -9,6 +9,9 @@ import com.dauphine.miage.motus_game_service.domain.Tentative;
 import com.dauphine.miage.motus_game_service.dto.GameStateDto;
 import com.dauphine.miage.motus_game_service.dto.LettreResultat;
 import com.dauphine.miage.motus_game_service.dto.TentativeDto;
+import com.dauphine.miage.motus_game_service.exception.InvalidGuessException;
+import com.dauphine.miage.motus_game_service.exception.NotFoundException;
+import com.dauphine.miage.motus_game_service.exception.ServiceUnavailableException;
 import com.dauphine.miage.motus_game_service.repository.JeuRepository;
 import com.dauphine.miage.motus_game_service.util.MotusFeedbackUtil;
 import org.slf4j.Logger;
@@ -57,12 +60,12 @@ public class MotusGameService {
         if (longueur < LONGUEUR_MIN || longueur > LONGUEUR_MAX) {
             String msg = "Nombre de lettres invalide : " + longueur + ". Doit être entre " + LONGUEUR_MIN + " et " + LONGUEUR_MAX;
             adminLog.warn("[ADMIN] Partie refusée — joueur {} : {}", joueurId, msg);
-            throw new RuntimeException(msg);
+            throw new InvalidGuessException(msg);
         }
 
         // Vérification que le joueur existe
         if (!playerClient.existe(joueurId)) {
-            throw new RuntimeException("Joueur introuvable avec l'id : " + joueurId);
+            throw new NotFoundException("Joueur introuvable avec l'id : " + joueurId);
         }
 
         // Tirage du mot secret (longueur précise)
@@ -70,10 +73,10 @@ public class MotusGameService {
         try {
             mot = dictionaryClient.getMotAleatoireParLongueur(longueur);
         } catch (Exception e) {
-            throw new RuntimeException("Impossible de contacter le dictionnaire pour " + longueur + " lettres");
+            throw new ServiceUnavailableException("Impossible de contacter le dictionnaire pour " + longueur + " lettres");
         }
         if (mot == null || mot.isBlank()) {
-            throw new RuntimeException("Aucun mot disponible de " + longueur + " lettres dans le dictionnaire");
+            throw new ServiceUnavailableException("Aucun mot disponible de " + longueur + " lettres dans le dictionnaire");
         }
 
         String motSecret = mot.toUpperCase().trim().replace("\"", "");
@@ -97,11 +100,15 @@ public class MotusGameService {
 
     @Transactional
     public GameStateDto guess(Long jeuId, String motPropose) {
+        if (motPropose == null || motPropose.isBlank()) {
+            throw new InvalidGuessException("Aucun mot proposé");
+        }
+
         Jeu jeu = jeuRepository.findByIdWithTentatives(jeuId)
-                .orElseThrow(() -> new RuntimeException("Partie introuvable avec l'id : " + jeuId));
+                .orElseThrow(() -> new NotFoundException("Partie introuvable avec l'id : " + jeuId));
 
         if (jeu.getStatut() != StatutJeu.EN_COURS) {
-            throw new RuntimeException("Cette partie est terminée (statut : " + jeu.getStatut() + ")");
+            throw new InvalidGuessException("Cette partie est terminée (statut : " + jeu.getStatut() + ")");
         }
 
         String mot = motPropose.toUpperCase().trim();
@@ -112,14 +119,14 @@ public class MotusGameService {
         if (mot.length() != motSecret.length()) {
             String raison = "Le mot doit contenir " + motSecret.length() + " lettres, vous en avez saisi " + mot.length();
             adminLog.info("[ADMIN] Partie {} — mot refusé '{}' : {}", jeuId, mot, raison);
-            throw new RuntimeException(raison);
+            throw new InvalidGuessException(raison);
         }
 
         // Règle 2 : première lettre correcte
         if (mot.charAt(0) != premiereLettre) {
             String raison = "Le mot doit commencer par la lettre '" + premiereLettre + "' (proposé : '" + mot.charAt(0) + "')";
             adminLog.info("[ADMIN] Partie {} — mot refusé '{}' : {}", jeuId, mot, raison);
-            throw new RuntimeException(raison);
+            throw new InvalidGuessException(raison);
         }
 
         // Règle 3 : mot non déjà proposé dans cette partie
@@ -128,14 +135,14 @@ public class MotusGameService {
         if (dejaPropose) {
             String raison = "Le mot '" + mot + "' a déjà été proposé dans cette partie";
             adminLog.info("[ADMIN] Partie {} — mot refusé '{}' : {}", jeuId, mot, raison);
-            throw new RuntimeException(raison);
+            throw new InvalidGuessException(raison);
         }
 
         // Règle 4 : mot présent dans le dictionnaire
         if (!dictionaryClient.motExiste(mot)) {
             String raison = "Mot non reconnu dans le dictionnaire : " + mot;
             adminLog.info("[ADMIN] Partie {} — mot refusé '{}' : {}", jeuId, mot, raison);
-            throw new RuntimeException(raison);
+            throw new InvalidGuessException(raison);
         }
 
         // Calcul du feedback
@@ -171,7 +178,7 @@ public class MotusGameService {
     public GameStateDto getGame(Long jeuId) {
         return jeuRepository.findByIdWithTentatives(jeuId)
                 .map(this::toDto)
-                .orElseThrow(() -> new RuntimeException("Partie introuvable avec l'id : " + jeuId));
+                .orElseThrow(() -> new NotFoundException("Partie introuvable avec l'id : " + jeuId));
     }
 
     @Transactional(readOnly = true)

@@ -8,17 +8,22 @@ import com.dauphine.miage.history_stat_service.repository.PartieRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -113,70 +118,77 @@ class HistoryControllerTest {
 
     // ── Classement ────────────────────────────────────────────────────────────
 
-    @Test
-    void getClassement_ordonneParVictoiresDecroissantes() {
-        Partie partieJ2 = new Partie();
-        partieJ2.setJoueurId(20L);
-        partieJ2.setNombreTentatives(2);
-        partieJ2.setGagne(true);
+    // L'agrégation étant faite en base, on simule les lignes agrégées (une par joueur).
+    private PartieRepository.ClassementRow row(long joueurId, long jouees, long gagnees) {
+        return new PartieRepository.ClassementRow() {
+            public Long getJoueurId() { return joueurId; }
+            public long getJouees()   { return jouees; }
+            public long getGagnees()  { return gagnees; }
+        };
+    }
 
-        when(partieRepository.findAll()).thenReturn(
-                List.of(partieGagnee, partiePerdue, partieJ2));
+    @Test
+    void getClassement_calculeTauxEtRang() {
+        // joueur 10 : 2 jouées / 1 gagnée (50 %) ; joueur 20 : 1 jouée / 1 gagnée (100 %)
+        when(partieRepository.aggregateClassement())
+                .thenReturn(List.of(row(10L, 2, 1), row(20L, 1, 1)));
 
         List<ClassementDto> classement = historyController.getClassement();
 
-        // joueur 10 : 1 victoire, joueur 20 : 1 victoire → rang basé sur taux
         assertThat(classement).hasSize(2);
-        // Le premier rang doit avoir le rang = 1
         assertThat(classement.get(0).getRang()).isEqualTo(1);
         assertThat(classement.get(1).getRang()).isEqualTo(2);
+
+        ClassementDto j10 = classement.stream().filter(c -> c.getJoueurId() == 10L).findFirst().orElseThrow();
+        assertThat(j10.getPartiesJouees()).isEqualTo(2);
+        assertThat(j10.getPartiesGagnees()).isEqualTo(1);
+        assertThat(j10.getTauxVictoire()).isEqualTo(50.0);
     }
 
     @Test
     void getClassement_tableauVide_retourneListeVide() {
-        when(partieRepository.findAll()).thenReturn(List.of());
+        when(partieRepository.aggregateClassement()).thenReturn(List.of());
 
         List<ClassementDto> classement = historyController.getClassement();
 
         assertThat(classement).isEmpty();
     }
 
-    // ── Recherche admin ───────────────────────────────────────────────────────
+    // ── Recherche admin (filtrage délégué à la base) ──────────────────────────
 
     @Test
-    void searchParties_filtreParJoueur() {
-        when(partieRepository.findAll()).thenReturn(List.of(partieGagnee, partiePerdue));
+    void searchParties_delegueAuRepository() {
+        when(partieRepository.search(eq(10L), isNull(), isNull(), isNull()))
+                .thenReturn(List.of(partieGagnee, partiePerdue));
 
         List<Partie> result = historyController.searchParties(10L, null, null);
 
-        assertThat(result).hasSize(2); // les deux appartiennent au joueur 10
+        assertThat(result).hasSize(2);
     }
 
     @Test
-    void searchParties_filtreParGagne() {
-        when(partieRepository.findAll()).thenReturn(List.of(partieGagnee, partiePerdue));
+    void searchParties_filtreGagne_passeLeParametre() {
+        when(partieRepository.search(isNull(), eq(true), isNull(), isNull()))
+                .thenReturn(List.of(partieGagnee));
+        when(partieRepository.search(isNull(), eq(false), isNull(), isNull()))
+                .thenReturn(List.of(partiePerdue));
 
-        List<Partie> gagnees = historyController.searchParties(null, null, true);
-        List<Partie> perdues = historyController.searchParties(null, null, false);
-
-        assertThat(gagnees).hasSize(1);
-        assertThat(perdues).hasSize(1);
+        assertThat(historyController.searchParties(null, null, true)).hasSize(1);
+        assertThat(historyController.searchParties(null, null, false)).hasSize(1);
     }
 
     @Test
-    void searchParties_filtreParJoueurEtGagne() {
-        Partie autreJoueur = new Partie();
-        autreJoueur.setJoueurId(20L);
-        autreJoueur.setGagne(true);
-        autreJoueur.setNombreTentatives(1);
+    void searchParties_dateTraduiteEnIntervalleDeJournee() {
+        LocalDate date = LocalDate.of(2026, 6, 29);
+        when(partieRepository.search(isNull(), isNull(), any(), any())).thenReturn(List.of());
 
-        when(partieRepository.findAll()).thenReturn(
-                List.of(partieGagnee, partiePerdue, autreJoueur));
+        historyController.searchParties(null, date, null);
 
-        List<Partie> result = historyController.searchParties(10L, null, true);
+        ArgumentCaptor<LocalDateTime> debut = ArgumentCaptor.forClass(LocalDateTime.class);
+        ArgumentCaptor<LocalDateTime> fin   = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(partieRepository).search(isNull(), isNull(), debut.capture(), fin.capture());
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0).getJoueurId()).isEqualTo(10L);
-        assertThat(result.get(0).isGagne()).isTrue();
+        assertThat(debut.getValue()).isEqualTo(date.atStartOfDay());
+        assertThat(fin.getValue()).isEqualTo(date.plusDays(1).atStartOfDay());
     }
 }

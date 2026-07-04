@@ -327,6 +327,10 @@
     <button class="btn btn-green" onclick="submitGuess()">OK</button>
   </div>
 
+  <!-- SHARE (visible en fin de partie) -->
+  <button class="btn btn-yellow btn-full hidden" id="share-btn" style="max-width:480px"
+          onclick="shareResult()">📋 Partager mon score</button>
+
 </div>
 
 <!-- STATS MODAL -->
@@ -360,6 +364,7 @@
   let wordLen    = 0;
   let maxTries   = 6;
   let gameOver   = false;
+  let lastGame   = null;   // dernière partie reçue (sert au partage emoji)
 
   /* ── Init ───────────────────────────────────────────────────────────── */
   window.onload = () => {
@@ -465,8 +470,9 @@
     gameOver = false;
     resetAuthMode();
     show('login-card');
-    hide('player-card'); hide('ctrl-row'); hide('guess-row'); hide('legend');
+    hide('player-card'); hide('ctrl-row'); hide('guess-row'); hide('legend'); hide('share-btn');
     $('board').innerHTML = '';
+    lastGame = null;
     clearMsg();
   }
 
@@ -487,7 +493,7 @@
   }
 
   function showAdminUI(pseudo) {
-    hide('login-card'); hide('player-card'); hide('ctrl-row'); hide('guess-row'); hide('legend');
+    hide('login-card'); hide('player-card'); hide('ctrl-row'); hide('guess-row'); hide('legend'); hide('share-btn');
     $('board').innerHTML = ''; clearMsg();
     $('admin-name').textContent = pseudo;
     show('admin-card');
@@ -626,7 +632,7 @@
   /* ── Game ───────────────────────────────────────────────────────────── */
   async function startNewGame() {
     if (!playerId) return;
-    gameOver = false; clearMsg();
+    gameOver = false; lastGame = null; clearMsg(); hide('share-btn');
 
     const r = await apiPost('/api/games/start', { joueurId: playerId });
     if (!r.ok) { msg(await r.text(), 'error'); return; }
@@ -665,11 +671,11 @@
 
     if (game.statut === 'GAGNE') {
       gameOver = true;
-      hide('guess-row');
+      hide('guess-row'); show('share-btn');
       msg('🎉 ' + game.message, 'success');
     } else if (game.statut === 'PERDU') {
       gameOver = true;
-      hide('guess-row');
+      hide('guess-row'); show('share-btn');
       msg('😞 ' + game.message, 'defeat');
     } else {
       msg(game.message, 'info');
@@ -696,6 +702,7 @@
   }
 
   function renderGame(game) {
+    lastGame = game;
     const tries = game.tentatives || [];
 
     tries.forEach((t, row) => {
@@ -777,6 +784,54 @@
     $('classement-modal').classList.add('open');
   }
   function closeClassement() { $('classement-modal').classList.remove('open'); }
+
+  /* ── Partage du score (grille emoji façon Wordle/Motus) ──────────────── */
+  const SHARE_EMOJI = { BIEN_PLACE: '🟩', MAL_PLACE: '🟨', ABSENT: '⬛' };
+
+  // Construit le texte partageable à partir de la dernière partie terminée.
+  function buildShareText() {
+    if (!lastGame || lastGame.statut === 'EN_COURS') return null;
+    const tries = lastGame.tentatives || [];
+    const grid  = tries
+      .map(t => t.lettres.map(l => SHARE_EMOJI[l.resultat] || '⬛').join(''))
+      .join('\n');
+    const max   = lastGame.tentativesMax || maxTries;
+    // Comme Wordle : n/max si gagné, X/max si perdu
+    const score = lastGame.statut === 'GAGNE' ? (tries.length + '/' + max) : ('X/' + max);
+    const url   = window.location.origin || window.location.href;
+    return 'MOTUS · ' + lastGame.longueurMot + ' lettres · ' + score + '\n\n' + grid + '\n\n' + url;
+  }
+
+  async function shareResult() {
+    const text = buildShareText();
+    if (!text) return;
+
+    // Copie dans le presse-papier (API moderne)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        msg('Résultat copié dans le presse-papier ! 📋', 'success');
+        return;
+      } catch (_) { /* ex : contexte non sécurisé (http) → fallback ci-dessous */ }
+    }
+    // Fallback universel (vieux navigateurs / http)
+    fallbackCopy(text);
+  }
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+    document.body.removeChild(ta);
+    msg(ok ? 'Résultat copié ! Collez-le où vous voulez 📋'
+           : 'Copie impossible — sélectionnez le texte du plateau manuellement.',
+        ok ? 'success' : 'error');
+  }
 
   /* ── Helpers ─────────────────────────────────────────────────────────── */
   function $(id)   { return document.getElementById(id); }
