@@ -32,6 +32,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/db_players
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: root
+      SERVICES_HISTORY_URL: http://history-stat-service:8083
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -Xss512k"
     mem_limit: 384m
     depends_on:
